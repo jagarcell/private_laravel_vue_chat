@@ -10,6 +10,29 @@ class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_login_is_rate_limited_after_too_many_failed_attempts(): void
+    {
+        $user = User::factory()->create();
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->from('/login')->post('/login', [
+                'email' => $user->email,
+                'password' => 'wrong-password',
+            ]);
+        }
+
+        $response = $this->from('/login')->post('/login', [
+            'email' => $user->email,
+            'password' => 'wrong-password',
+        ]);
+
+        $response
+            ->assertRedirect('/login')
+            ->assertSessionHasErrors('email');
+
+        $this->assertGuest();
+    }
+
     public function test_login_screen_can_be_rendered(): void
     {
         $response = $this->get('/login');

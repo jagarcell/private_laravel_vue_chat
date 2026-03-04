@@ -83,3 +83,48 @@ Stop:
 ```bash
 ./vendor/bin/sail down
 ```
+
+## Testing
+
+Feature tests in this app use `RefreshDatabase`, so a working database connection is required.
+
+### Option 1: MySQL (default)
+
+Create your local test env file from the template:
+
+```bash
+cp .env.testing.example .env.testing
+```
+
+Then adjust database settings in `.env.testing` (or exported env vars), for example:
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=private_laravel_vue_chat_test
+DB_USERNAME=...
+DB_PASSWORD=...
+```
+
+Run all tests:
+
+```bash
+php artisan test
+```
+
+### Option 2: SQLite (fast local fallback)
+
+If you prefer SQLite, make sure PHP has `pdo_sqlite` enabled; otherwise tests fail with `could not find driver`.
+
+Run with in-memory SQLite:
+
+```bash
+DB_CONNECTION=sqlite DB_DATABASE=':memory:' php artisan test
+```
+
+### Targeted suite added in `test/initial-tests`
+
+```bash
+php artisan test tests/Feature/DashboardTest.php tests/Feature/ProfileTest.php tests/Feature/Auth/AuthenticationTest.php
+```

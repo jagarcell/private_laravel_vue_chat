@@ -10,6 +10,13 @@ class ProfileTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_profile_page_requires_authentication(): void
+    {
+        $response = $this->get('/profile');
+
+        $response->assertRedirect('/login');
+    }
+
     public function test_profile_page_is_displayed(): void
     {
         $user = User::factory()->create();
@@ -41,6 +48,41 @@ class ProfileTest extends TestCase
         $this->assertSame('Test User', $user->name);
         $this->assertSame('test@example.com', $user->email);
         $this->assertNull($user->email_verified_at);
+    }
+
+    public function test_profile_email_must_be_unique_for_other_users(): void
+    {
+        $currentUser = User::factory()->create();
+        $existingUser = User::factory()->create();
+
+        $response = $this
+            ->actingAs($currentUser)
+            ->from('/profile')
+            ->patch('/profile', [
+                'name' => 'Test User',
+                'email' => $existingUser->email,
+            ]);
+
+        $response
+            ->assertRedirect('/profile')
+            ->assertSessionHasErrors('email');
+    }
+
+    public function test_profile_name_is_required_when_updating_profile(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this
+            ->actingAs($user)
+            ->from('/profile')
+            ->patch('/profile', [
+                'name' => '',
+                'email' => $user->email,
+            ]);
+
+        $response
+            ->assertRedirect('/profile')
+            ->assertSessionHasErrors('name');
     }
 
     public function test_email_verification_status_is_unchanged_when_the_email_address_is_unchanged(): void
