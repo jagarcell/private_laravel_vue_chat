@@ -10,6 +10,13 @@ class HomePageTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_unknown_web_route_redirects_to_home_page(): void
+    {
+        $response = $this->get('/this-route-does-not-exist');
+
+        $response->assertRedirect('/');
+    }
+
     /**
      * A basic test example.
      */
