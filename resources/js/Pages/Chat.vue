@@ -1,15 +1,28 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
 import ChatRooms from '@/Components/Chat/ChatRooms.vue';
 import Conversaton from '@/Components/Chat/Conversaton.vue';
 import Users from '@/Components/Chat/Users.vue';
+import axios from 'axios';
+import { computed, onMounted, ref } from 'vue';
 
-defineProps({
-    users: {
-        type: Array,
-        default: () => [],
-    },
+const page = usePage();
+const users = ref([]);
+
+const requesterId = computed(() => page.props.auth?.user?.id ?? null);
+
+const loadUsers = async () => {
+    const response = await axios.get('/api/users');
+    const apiUsers = response.data?.data?.users ?? [];
+
+    users.value = apiUsers.filter((user) => {
+        return user.id !== requesterId.value;
+    });
+};
+
+onMounted(() => {
+    loadUsers();
 });
 </script>
 

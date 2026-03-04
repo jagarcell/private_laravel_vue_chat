@@ -1,18 +1,11 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
-use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::get('/', function (Request $request) {
-    return Inertia::render('Chat', [
-        'users' => User::query()
-            ->whereKeyNot($request->user()->id)
-            ->orderBy('name')
-            ->get(['id', 'name', 'email']),
-    ]);
+Route::get('/', function () {
+    return Inertia::render('Chat');
 })->middleware('auth');
 
 Route::middleware('auth')->group(function () {
