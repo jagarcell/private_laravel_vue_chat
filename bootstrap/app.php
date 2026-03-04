@@ -54,6 +54,8 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($request->is('api/*')) {
                 return ApiResponse::error('Resource not found.', 404);
             }
+
+            return redirect('/');
         });
 
         $exceptions->render(function (\Throwable $exception, Request $request) {
