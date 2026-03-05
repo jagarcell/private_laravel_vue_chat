@@ -78,11 +78,40 @@ Start:
 ./vendor/bin/sail npm run dev
 ```
 
+Reverb is included in Docker Compose and starts with `sail up -d`.
+
 Stop:
 
 ```bash
 ./vendor/bin/sail down
 ```
+
+### Clean rebuild (Sail)
+
+Use this when Docker images/services get out of sync and you need a fresh rebuild:
+
+```bash
+./vendor/bin/sail down --volumes
+./vendor/bin/sail build --no-cache
+./vendor/bin/sail up -d
+```
+
+### Realtime websocket server (Reverb)
+
+Start Reverb in a separate terminal for Echo websocket events (like user status updates on logout):
+
+```bash
+php artisan reverb:start
+```
+
+If you are using Sail, you can also (re)start only the Reverb service:
+
+```bash
+./vendor/bin/sail up -d reverb
+```
+
+For remote clients, do not use `localhost` for `REVERB_HOST` / `VITE_REVERB_HOST`.
+Use your server domain (for example `jagarcell.ddns.net`) and match `REVERB_SCHEME` / `VITE_REVERB_SCHEME` with your site protocol (`http` or `https`).
 
 ## Testing
 
