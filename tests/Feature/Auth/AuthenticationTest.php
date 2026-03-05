@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Events\UserOnlineStatusChanged;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase
@@ -42,12 +44,18 @@ class AuthenticationTest extends TestCase
 
     public function test_users_can_authenticate_using_the_login_screen(): void
     {
+        Event::fake();
+
         $user = User::factory()->create();
 
         $response = $this->post('/login', [
             'email' => $user->email,
             'password' => 'password',
         ]);
+
+        Event::assertDispatched(UserOnlineStatusChanged::class, function (UserOnlineStatusChanged $event) use ($user): bool {
+            return $event->user_id === $user->id && $event->is_online === true;
+        });
 
         $this->assertAuthenticated();
         $response->assertRedirect('/');
@@ -67,9 +75,15 @@ class AuthenticationTest extends TestCase
 
     public function test_users_can_logout(): void
     {
+        Event::fake();
+
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)->post('/logout');
+
+        Event::assertDispatched(UserOnlineStatusChanged::class, function (UserOnlineStatusChanged $event) use ($user): bool {
+            return $event->user_id === $user->id && $event->is_online === false;
+        });
 
         $this->assertGuest();
         $response->assertRedirect('/');

@@ -5,7 +5,7 @@ import ChatRooms from '@/Components/Chat/ChatRooms.vue';
 import Conversaton from '@/Components/Chat/Conversaton.vue';
 import Users from '@/Components/Chat/Users.vue';
 import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const page = usePage();
 const users = ref([]);
@@ -23,6 +23,27 @@ const loadUsers = async () => {
 
 onMounted(() => {
     loadUsers();
+
+    if (window.Echo) {
+        window.Echo.private('users.status').listen('.user.status.changed', (event) => {
+            users.value = users.value.map((user) => {
+                if (user.id !== event.user_id) {
+                    return user;
+                }
+
+                return {
+                    ...user,
+                    is_online: Boolean(event.is_online),
+                };
+            });
+        });
+    }
+});
+
+onUnmounted(() => {
+    if (window.Echo) {
+        window.Echo.leave('users.status');
+    }
 });
 </script>
 
