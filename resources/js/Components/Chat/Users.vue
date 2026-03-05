@@ -1,10 +1,24 @@
 <script setup>
-defineProps({
+const props = defineProps({
     users: {
         type: Array,
         default: () => [],
     },
+    requestStates: {
+        type: Object,
+        default: () => ({}),
+    },
 });
+
+const emit = defineEmits(['request-chat', 'dismiss-declined', 'close-chat']);
+
+const canRequestChat = (user) => {
+    const state = props.requestStates[user.id] ?? 'none';
+
+    return user.is_online && state !== 'connected' && state !== 'pending';
+};
+
+const userState = (user) => props.requestStates[user.id] ?? 'none';
 </script>
 
 <template>
@@ -35,6 +49,48 @@ defineProps({
                     >
                         {{ user.is_online ? 'Online' : 'Offline' }}
                     </span>
+                </div>
+
+                <div class="mt-3 flex items-center gap-2">
+                    <button
+                        v-if="userState(user) !== 'connected'"
+                        type="button"
+                        class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        :disabled="!canRequestChat(user)"
+                        @click="emit('request-chat', user)"
+                    >
+                        Chat Request
+                    </button>
+
+                    <button
+                        v-else
+                        type="button"
+                        class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white"
+                        @click="emit('close-chat', user)"
+                    >
+                        Close Chat
+                    </button>
+
+                    <span
+                        v-if="userState(user) === 'connected'"
+                        class="text-xs text-blue-600"
+                    >
+                        chating...
+                    </span>
+                </div>
+
+                <div
+                    v-if="userState(user) === 'declined' || userState(user) === 'closed'"
+                    class="mt-2 flex items-center justify-between gap-2 rounded-md bg-[bisque] p-2 text-xs text-gray-700"
+                >
+                    <span>{{ userState(user) === 'closed' ? 'Chat Closed' : 'Request Declined' }}</span>
+                    <button
+                        type="button"
+                        class="rounded-md bg-blue-600 px-2 py-1 text-xs text-white"
+                        @click="emit('dismiss-declined', user)"
+                    >
+                        Dismiss
+                    </button>
                 </div>
             </li>
         </ul>
