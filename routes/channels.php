@@ -45,3 +45,18 @@ Broadcast::channel('users.status', function ($user) {
 Broadcast::channel('users.chat-request.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
+
+/**
+ * Authorize private channel subscriptions for direct chat message events.
+ *
+ * Rules:
+ * 1) Only the authenticated user can subscribe to their own user-specific channel.
+ * 2) Deny all cross-user channel access.
+ *
+ * @param  User  $user
+ * @param  int  $userId
+ * @return bool
+ */
+Broadcast::channel('users.chat-message.{userId}', function ($user, $userId) {
+    return (int) $user->id === (int) $userId;
+});
