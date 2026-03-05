@@ -157,3 +157,26 @@ DB_CONNECTION=sqlite DB_DATABASE=':memory:' php artisan test
 ```bash
 php artisan test tests/Feature/DashboardTest.php tests/Feature/ProfileTest.php tests/Feature/Auth/AuthenticationTest.php
 ```
+
+## Git Workflow
+
+Use a short-lived feature branch per change:
+
+```bash
+git checkout -b feature/<short-description>
+```
+
+Commit with a focused message:
+
+```bash
+git add .
+git commit -m "Describe the change"
+```
+
+Push branch to GitHub:
+
+```bash
+git push -u origin feature/<short-description>
+```
+
+Then open a Pull Request from `feature/<short-description>` into `main` on GitHub.
