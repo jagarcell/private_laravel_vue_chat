@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\ChatMessageSendRequest;
 use App\Http\Requests\Api\ChatRequestCloseRequest;
 use App\Http\Requests\Api\ChatRequestRespondRequest;
 use App\Http\Requests\Api\ChatRequestSendRequest;
+use App\Http\Resources\ChatMessageResource;
 use App\Http\Resources\ChatRequestActionResource;
 use App\Services\Chat\HandleChatRequestLifecycleService;
 use App\Support\ApiResponse;
@@ -139,6 +141,45 @@ class ChatRequestController extends Controller
             'chat_request' => ChatRequestActionResource::make([
                 'action' => 'closed',
                 'to_user_id' => $toUserId,
+            ])->resolve($request),
+        ]);
+    }
+
+    /**
+     * Send a direct chat message to the selected user.
+     *
+     * Logic:
+     * 1) Validate target user and message payload via FormRequest.
+     * 2) Resolve authenticated sender and reject unauthenticated requests.
+     * 3) Delegate online validation and broadcast dispatch to service layer.
+     * 4) Return standardized API success envelope using a resource payload.
+     *
+     * @param  ChatMessageSendRequest  $request
+     * @return JsonResponse
+     */
+    public function sendMessage(ChatMessageSendRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $fromUser = $request->user();
+
+        if (is_null($fromUser)) {
+            return ApiResponse::error('Unauthenticated.', 401);
+        }
+
+        try {
+            $toUserId = (int) $validated['to_user_id'];
+            $message = trim((string) $validated['message']);
+
+            $this->chatRequestLifecycleService->sendMessage($fromUser, $toUserId, $message);
+        } catch (InvalidArgumentException $exception) {
+            return ApiResponse::error($exception->getMessage(), 422);
+        }
+
+        return ApiResponse::success('Message sent.', [
+            'chat_message' => ChatMessageResource::make([
+                'to_user_id' => $toUserId,
+                'message' => $message,
             ])->resolve($request),
         ]);
     }

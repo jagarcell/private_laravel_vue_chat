@@ -2,8 +2,11 @@
 
 namespace App\Services\Chat;
 
+use App\Events\ChatMessageSent;
 use App\Events\ChatRequestMessage;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 /**
@@ -87,6 +90,39 @@ class HandleChatRequestLifecycleService
     }
 
     /**
+     * Process direct message sending to another user.
+     *
+     * Logic:
+     * 1) Ensure source and destination users are different.
+     * 2) Validate the target user is currently online.
+     * 3) Broadcast the message to the target user's private message channel.
+     *
+     * @param  User  $fromUser
+     * @param  int  $toUserId
+     * @param  string  $message
+     * @return void
+     */
+    public function sendMessage(User $fromUser, int $toUserId, string $message): void
+    {
+        $this->ensureDifferentUsers(
+            fromUserId: (int) $fromUser->id,
+            toUserId: $toUserId,
+            errorMessage: 'You cannot send a message to yourself.',
+        );
+
+        if (! $this->isUserOnline($toUserId)) {
+            throw new InvalidArgumentException('You can only send messages to online users.');
+        }
+
+        event(new ChatMessageSent(
+            to_user_id: $toUserId,
+            from_user_id: (int) $fromUser->id,
+            from_user_name: (string) $fromUser->name,
+            message: $message,
+        ));
+    }
+
+    /**
      * Validate that source and destination users are different.
      *
      * Logic:
@@ -125,5 +161,30 @@ class HandleChatRequestLifecycleService
             from_user_name: (string) $fromUser->name,
             type: $type,
         ));
+    }
+
+    /**
+     * Determine whether a target user is currently online based on active sessions.
+     *
+     * Logic:
+     * 1) Ensure database session driver and sessions table are available.
+     * 2) Compute the minimum active timestamp from configured lifetime.
+     * 3) Check for an active session row for the target user.
+     *
+     * @param  int  $userId
+     * @return bool
+     */
+    private function isUserOnline(int $userId): bool
+    {
+        if (config('session.driver') !== 'database' || ! Schema::hasTable('sessions')) {
+            return false;
+        }
+
+        $minimumLastActivity = now()->subMinutes((int) config('session.lifetime', 120))->getTimestamp();
+
+        return DB::table('sessions')
+            ->where('user_id', $userId)
+            ->where('last_activity', '>=', $minimumLastActivity)
+            ->exists();
     }
 }
