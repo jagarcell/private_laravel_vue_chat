@@ -11,8 +11,21 @@ const page = usePage();
 const users = ref([]);
 const requestStates = ref({});
 const incomingRequest = ref(null);
+const selectedUserId = ref(null);
+const messageHistories = ref({});
 
 const requesterId = computed(() => page.props.auth?.user?.id ?? null);
+const selectedUser = computed(() => {
+    return users.value.find((user) => user.id === selectedUserId.value) ?? null;
+});
+
+const selectedUserMessages = computed(() => {
+    if (!selectedUser.value) {
+        return [];
+    }
+
+    return messageHistories.value[selectedUser.value.id] ?? [];
+});
 
 const loadUsers = async () => {
     const response = await axios.get('/api/users');
@@ -61,12 +74,40 @@ const dismissDeclined = (user) => {
     setRequestState(user.id, 'none');
 };
 
+const selectUser = (user) => {
+    selectedUserId.value = user?.id ?? null;
+};
+
 const closeChat = async (user) => {
     await axios.post('/api/chat-requests/close', {
         to_user_id: user.id,
     });
 
     setRequestState(user.id, 'none');
+};
+
+const appendMessageToHistory = (userId, text) => {
+    const existing = messageHistories.value[userId] ?? [];
+
+    messageHistories.value = {
+        ...messageHistories.value,
+        [userId]: [...existing, text],
+    };
+};
+
+const sendMessage = async (content) => {
+    const targetUser = selectedUser.value;
+
+    if (!targetUser || !targetUser.is_online) {
+        return;
+    }
+
+    await axios.post('/api/chat-message/send', {
+        to_user_id: targetUser.id,
+        message: content,
+    });
+
+    appendMessageToHistory(targetUser.id, `You: ${content}`);
 };
 
 const handleChatRequestMessage = (event) => {
@@ -99,6 +140,18 @@ const handleChatRequestMessage = (event) => {
     }
 };
 
+const handleChatMessageSent = (event) => {
+    const fromUserId = Number(event?.from_user_id ?? 0);
+    const fromUserName = String(event?.from_user_name ?? 'User');
+    const message = String(event?.message ?? '').trim();
+
+    if (!fromUserId || message.length === 0) {
+        return;
+    }
+
+    appendMessageToHistory(fromUserId, `${fromUserName}: ${message}`);
+};
+
 onMounted(() => {
     loadUsers();
 
@@ -119,6 +172,9 @@ onMounted(() => {
         if (requesterId.value) {
             window.Echo.private(`users.chat-request.${requesterId.value}`)
                 .listen('.chat.request.message', handleChatRequestMessage);
+
+            window.Echo.private(`users.chat-message.${requesterId.value}`)
+                .listen('.chat.message.sent', handleChatMessageSent);
         }
     }
 });
@@ -130,6 +186,9 @@ onUnmounted(() => {
         if (requesterId.value) {
             window.Echo.private(`users.chat-request.${requesterId.value}`)
                 .stopListening('.chat.request.message', handleChatRequestMessage);
+
+            window.Echo.private(`users.chat-message.${requesterId.value}`)
+                .stopListening('.chat.message.sent', handleChatMessageSent);
         }
     }
 });
@@ -153,9 +212,11 @@ onUnmounted(() => {
                             <Users
                                 :users="users"
                                 :request-states="requestStates"
+                                :selected-user-id="selectedUserId"
                                 @request-chat="sendChatRequest"
                                 @dismiss-declined="dismissDeclined"
                                 @close-chat="closeChat"
+                                @select-user="selectUser"
                             />
                             <ChatRooms />
                         </div>
@@ -164,8 +225,11 @@ onUnmounted(() => {
                     <section class="lg:col-span-8">
                         <Conversaton
                             :incoming-request="incomingRequest"
+                            :selected-user="selectedUser"
+                            :message-history="selectedUserMessages"
                             @accept-request="acceptChatRequest"
                             @decline-request="declineChatRequest"
+                            @send-message="sendMessage"
                         />
                     </section>
                 </div>

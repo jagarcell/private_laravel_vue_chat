@@ -8,9 +8,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    selectedUserId: {
+        type: Number,
+        default: null,
+    },
 });
 
-const emit = defineEmits(['request-chat', 'dismiss-declined', 'close-chat']);
+const emit = defineEmits(['request-chat', 'dismiss-declined', 'close-chat', 'select-user']);
 
 const canRequestChat = (user) => {
     const state = props.requestStates[user.id] ?? 'none';
@@ -33,7 +37,11 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
             <li
                 v-for="user in users"
                 :key="user.id"
-                class="rounded-md border border-gray-200 px-3 py-2"
+                class="cursor-pointer rounded-md border px-3 py-2"
+                :class="props.selectedUserId === user.id
+                    ? 'border-blue-400 bg-blue-50'
+                    : 'border-gray-200'"
+                @click="emit('select-user', user)"
             >
                 <div class="flex items-start justify-between gap-2">
                     <div>
@@ -57,7 +65,7 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                         type="button"
                         class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                         :disabled="!canRequestChat(user)"
-                        @click="emit('request-chat', user)"
+                        @click.stop="emit('request-chat', user)"
                     >
                         Chat Request
                     </button>
@@ -66,7 +74,7 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                         v-else
                         type="button"
                         class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white"
-                        @click="emit('close-chat', user)"
+                        @click.stop="emit('close-chat', user)"
                     >
                         Close Chat
                     </button>
@@ -87,7 +95,7 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                     <button
                         type="button"
                         class="rounded-md bg-blue-600 px-2 py-1 text-xs text-white"
-                        @click="emit('dismiss-declined', user)"
+                        @click.stop="emit('dismiss-declined', user)"
                     >
                         Dismiss
                     </button>
