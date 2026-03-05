@@ -1,13 +1,45 @@
 <script setup>
-import { ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
+const page = usePage();
+
+const forceLogout = async () => {
+    try {
+        await window.axios.post(route('logout'));
+    } catch (error) {
+    } finally {
+        window.location.href = route('login');
+    }
+};
+
+const handleOwnSessionExpiredEvent = async (event) => {
+    const authenticatedUserId = Number(page.props.auth?.user?.id ?? 0);
+    const eventUserId = Number(event?.user_id ?? 0);
+    const isOnline = Boolean(event?.is_online);
+
+    if (authenticatedUserId > 0 && authenticatedUserId === eventUserId && !isOnline) {
+        await forceLogout();
+    }
+};
+
+onMounted(() => {
+    if (window.Echo) {
+        window.Echo.private('users.status').listen('.user.status.changed', handleOwnSessionExpiredEvent);
+    }
+});
+
+onUnmounted(() => {
+    if (window.Echo) {
+        window.Echo.private('users.status').stopListening('.user.status.changed', handleOwnSessionExpiredEvent);
+    }
+});
 </script>
 
 <template>

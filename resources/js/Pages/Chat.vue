@@ -42,7 +42,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     if (window.Echo) {
-        window.Echo.leave('users.status');
+        window.Echo.private('users.status').stopListening('.user.status.changed');
     }
 });
 </script>
