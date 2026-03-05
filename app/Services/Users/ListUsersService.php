@@ -7,10 +7,23 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Retrieves users with optional filters and computed online presence state.
+ */
 class ListUsersService
 {
     /**
+     * Build the users list payload for API responses.
+     *
+     * Logic:
+     * 1) Resolve currently online user IDs from active sessions.
+     * 2) Query users selecting identity fields.
+     * 3) Apply optional text search on name/email.
+     * 4) Sort by name.
+     * 5) Map each user into the API shape including computed `is_online`.
+     *
      * @param  array<string, mixed>  $filters
+     * @param  User  $authenticatedUser
      * @return Collection<int, array<string, mixed>>
      */
     public function handle(array $filters = [], User $authenticatedUser): Collection
@@ -40,6 +53,15 @@ class ListUsersService
     }
 
     /**
+        * Resolve unique IDs of users considered online based on session activity.
+        *
+        * Logic:
+        * 1) If database sessions are enabled and the table exists, query active sessions
+        *    using the configured session lifetime threshold.
+        * 2) Normalize returned IDs to unique integers.
+        * 3) Ensure the currently authenticated user is included.
+        *
+        * @param  User  $authenticatedUser
      * @return Collection<int, int>
      */
     private function resolveOnlineUserIds(User $authenticatedUser): Collection
