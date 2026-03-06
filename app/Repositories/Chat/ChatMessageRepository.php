@@ -121,4 +121,28 @@ class ChatMessageRepository
                 'read_at' => now(),
             ]);
     }
+
+    /**
+     * Return unread incoming message IDs for one conversation direction.
+     *
+     * Logic:
+     * 1) Scope query to unread messages sent by other user to authenticated user.
+     * 2) Order by ID so receipt updates follow insertion order.
+     * 3) Return normalized integer IDs for broadcasting payload.
+     *
+     * @param  User  $authenticatedUser
+     * @param  User  $otherUser
+     * @return array<int, int>
+     */
+    public function unreadIncomingMessageIds(User $authenticatedUser, User $otherUser): array
+    {
+        return ChatMessage::query()
+            ->where('from_user_id', $otherUser->id)
+            ->where('to_user_id', $authenticatedUser->id)
+            ->whereNull('read_at')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+    }
 }

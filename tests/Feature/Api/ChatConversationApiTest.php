@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Api;
 
+use App\Events\ChatMessagesRead;
 use App\Models\ChatMessage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -84,6 +86,8 @@ class ChatConversationApiTest extends TestCase
      */
     public function test_authenticated_user_can_get_unread_counts_and_mark_conversation_read(): void
     {
+        Event::fake([ChatMessagesRead::class]);
+
         $authenticatedUser = User::factory()->create();
         $senderA = User::factory()->create();
         $senderB = User::factory()->create();
@@ -133,6 +137,12 @@ class ChatConversationApiTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('message', 'Conversation marked as read.')
             ->assertJsonPath('data.updated_count', 2);
+
+        Event::assertDispatched(ChatMessagesRead::class, function (ChatMessagesRead $event) use ($authenticatedUser, $senderA): bool {
+            return $event->notify_user_id === $senderA->id
+                && $event->reader_user_id === $authenticatedUser->id
+                && count($event->message_ids) === 2;
+        });
 
         $this->assertSame(
             0,
