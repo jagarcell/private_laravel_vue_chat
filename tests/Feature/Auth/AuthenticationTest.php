@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Events\ChatRequestMessage;
 use App\Events\UserOnlineStatusChanged;
 use App\Models\User;
+use App\Support\ActiveChatConnectionsStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -84,6 +86,42 @@ class AuthenticationTest extends TestCase
         Event::assertDispatched(UserOnlineStatusChanged::class, function (UserOnlineStatusChanged $event) use ($user): bool {
             return $event->user_id === $user->id && $event->is_online === false;
         });
+
+        $this->assertGuest();
+        $response->assertRedirect('/');
+    }
+
+    /**
+     * Verify logout closes active chats and notifies connected peers.
+     *
+     * Logic:
+     * 1) Seed one active connection in chat connection store.
+     * 2) Log out connected user.
+     * 3) Assert `closed` chat-request message is broadcast to peer.
+     *
+     * @return void
+     */
+    public function test_logout_broadcasts_closed_for_active_chat_connections(): void
+    {
+        Event::fake();
+
+        $user = User::factory()->create();
+        $peer = User::factory()->create();
+
+        /** @var ActiveChatConnectionsStore $connectionsStore */
+        $connectionsStore = app(ActiveChatConnectionsStore::class);
+        $connectionsStore->connectBidirectional($user->id, $peer->id);
+
+        $response = $this->actingAs($user)->post('/logout');
+
+        Event::assertDispatched(ChatRequestMessage::class, function (ChatRequestMessage $event) use ($user, $peer): bool {
+            return $event->from_user_id === $user->id
+                && $event->to_user_id === $peer->id
+                && $event->type === 'closed';
+        });
+
+        $this->assertSame([], $connectionsStore->connectedUserIds($user->id)->all());
+        $this->assertSame([], $connectionsStore->connectedUserIds($peer->id)->all());
 
         $this->assertGuest();
         $response->assertRedirect('/');
