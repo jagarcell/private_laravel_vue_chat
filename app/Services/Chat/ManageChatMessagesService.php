@@ -5,9 +5,9 @@ namespace App\Services\Chat;
 use App\Events\ChatMessageSent;
 use App\Models\ChatMessage;
 use App\Models\User;
+use App\Repositories\Chat\ChatMessageRepository;
+use App\Repositories\Users\UserSessionRepository;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 /**
@@ -15,6 +15,22 @@ use InvalidArgumentException;
  */
 class ManageChatMessagesService
 {
+    /**
+     * Create a new service instance.
+     *
+     * Logic:
+     * 1) Inject chat message repository for direct message persistence/querying.
+     * 2) Inject user session repository for online-presence checks.
+     *
+     * @param  ChatMessageRepository  $chatMessageRepository
+     * @param  UserSessionRepository  $userSessionRepository
+     * @return void
+     */
+    public function __construct(
+        private readonly ChatMessageRepository $chatMessageRepository,
+        private readonly UserSessionRepository $userSessionRepository,
+    ) {}
+
     /**
      * Persist and broadcast a direct chat message.
      *
@@ -37,18 +53,11 @@ class ManageChatMessagesService
             errorMessage: 'You cannot send a message to yourself.',
         );
 
-        if (! $this->isUserOnline($toUserId)) {
+        if (! $this->userSessionRepository->isUserOnline($toUserId)) {
             throw new InvalidArgumentException('You can only send messages to online users.');
         }
 
-        $chatMessage = ChatMessage::query()->create([
-            'from_user_id' => (int) $fromUser->id,
-            'to_user_id' => $toUserId,
-            'message' => $message,
-            'read_at' => null,
-        ]);
-
-        $chatMessage->loadMissing(['fromUser:id,name']);
+        $chatMessage = $this->chatMessageRepository->create($fromUser, $toUserId, $message);
 
         event(new ChatMessageSent(
             chat_message_id: (int) $chatMessage->id,
@@ -77,21 +86,7 @@ class ManageChatMessagesService
      */
     public function conversation(User $authenticatedUser, User $otherUser, int $limit = 200): Collection
     {
-        return ChatMessage::query()
-            ->with(['fromUser:id,name'])
-            ->where(function ($query) use ($authenticatedUser, $otherUser): void {
-                $query
-                    ->where('from_user_id', $authenticatedUser->id)
-                    ->where('to_user_id', $otherUser->id);
-            })
-            ->orWhere(function ($query) use ($authenticatedUser, $otherUser): void {
-                $query
-                    ->where('from_user_id', $otherUser->id)
-                    ->where('to_user_id', $authenticatedUser->id);
-            })
-            ->orderBy('created_at')
-            ->limit($limit)
-            ->get();
+        return $this->chatMessageRepository->conversation($authenticatedUser, $otherUser, $limit);
     }
 
     /**
@@ -107,20 +102,7 @@ class ManageChatMessagesService
      */
     public function unreadCounts(User $authenticatedUser): array
     {
-        return ChatMessage::query()
-            ->selectRaw('from_user_id, COUNT(*) as unread_count')
-            ->where('to_user_id', $authenticatedUser->id)
-            ->whereNull('read_at')
-            ->groupBy('from_user_id')
-            ->orderBy('from_user_id')
-            ->get()
-            ->map(function (ChatMessage $chatMessage): array {
-                return [
-                    'user_id' => (int) $chatMessage->from_user_id,
-                    'unread_count' => (int) $chatMessage->unread_count,
-                ];
-            })
-            ->all();
+        return $this->chatMessageRepository->unreadCounts($authenticatedUser);
     }
 
     /**
@@ -137,13 +119,7 @@ class ManageChatMessagesService
      */
     public function markConversationAsRead(User $authenticatedUser, User $otherUser): int
     {
-        return ChatMessage::query()
-            ->where('from_user_id', $otherUser->id)
-            ->where('to_user_id', $authenticatedUser->id)
-            ->whereNull('read_at')
-            ->update([
-                'read_at' => now(),
-            ]);
+        return $this->chatMessageRepository->markConversationAsRead($authenticatedUser, $otherUser);
     }
 
     /**
@@ -165,28 +141,4 @@ class ManageChatMessagesService
         }
     }
 
-    /**
-     * Determine whether a target user is currently online based on active sessions.
-     *
-        * Logic:
-        * 1) Require database session driver and sessions table availability.
-        * 2) Compute minimum active timestamp from session lifetime config.
-        * 3) Check whether target user has any active session row.
-        *
-     * @param  int  $userId
-     * @return bool
-     */
-    private function isUserOnline(int $userId): bool
-    {
-        if (config('session.driver') !== 'database' || ! Schema::hasTable('sessions')) {
-            return false;
-        }
-
-        $minimumLastActivity = now()->subMinutes((int) config('session.lifetime', 120))->getTimestamp();
-
-        return DB::table('sessions')
-            ->where('user_id', $userId)
-            ->where('last_activity', '>=', $minimumLastActivity)
-            ->exists();
-    }
 }
