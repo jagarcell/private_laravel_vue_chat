@@ -558,15 +558,12 @@ const handleChatRequestMessage = (event) => {
     if (type === 'chat_room_closed') {
         const roomId = Number(event?.room_id ?? 0);
         const requesterName = String(event?.from_user_name ?? 'User');
-        const roomNameFromEvent = String(event?.room_name ?? '').trim();
-        const roomNameFromState = chatRooms.value.find((chatRoom) => Number(chatRoom.id) === roomId)?.name ?? '';
-        const roomName = roomNameFromEvent || String(roomNameFromState).trim() || 'Chat Room';
 
         if (roomId) {
             removeChatRoomFromState(roomId);
         }
 
-        addRoomNotice(`Chat room ${roomName} was closed by ${requesterName}`, roomId || null);
+        addRoomNotice(`Chat was closed by ${requesterName}`, roomId || null);
         return;
     }
 

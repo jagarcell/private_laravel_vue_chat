@@ -42,26 +42,6 @@ const canCreateRoom = computed(() => {
     return roomName.value.trim().length > 0 && selectedUserIds.value.length > 0;
 });
 
-const activeRoomIds = computed(() => {
-    return new Set(
-        props.chatRooms
-            .map((chatRoom) => Number(chatRoom?.id ?? 0))
-            .filter((chatRoomId) => chatRoomId > 0),
-    );
-});
-
-const orphanRoomNotices = computed(() => {
-    return props.roomNotices.filter((notice) => {
-        const roomId = Number(notice?.room_id ?? 0);
-
-        if (!roomId) {
-            return true;
-        }
-
-        return !activeRoomIds.value.has(roomId);
-    });
-});
-
 const selectableUsers = computed(() => {
     const authenticatedUserId = Number(props.authenticatedUserId);
 
@@ -134,15 +114,6 @@ const confirmLeaveRoom = (chatRoom) => {
     clearLeavePrompt();
 };
 
-const noticesForRoom = (chatRoomId) => {
-    const normalizedRoomId = Number(chatRoomId ?? 0);
-
-    if (!normalizedRoomId) {
-        return [];
-    }
-
-    return props.roomNotices.filter((notice) => Number(notice?.room_id ?? 0) === normalizedRoomId);
-};
 </script>
 
 <template>
@@ -216,29 +187,6 @@ const noticesForRoom = (chatRoomId) => {
                         </button>
                     </div>
                 </div>
-                <div
-                    v-if="noticesForRoom(chatRoom.id).length > 0"
-                    class="mt-3 space-y-2"
-                >
-                    <div
-                        v-for="notice in noticesForRoom(chatRoom.id)"
-                        :key="notice.id"
-                        class="rounded-md border border-gray-200 bg-[bisque] p-3"
-                    >
-                        <p class="text-sm text-gray-700">
-                            {{ notice.message }}
-                        </p>
-                        <div class="mt-3">
-                            <button
-                                type="button"
-                                class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
-                                @click="emit('dismiss-room-notice', notice)"
-                            >
-                                Dismiss
-                            </button>
-                        </div>
-                    </div>
-                </div>
             </li>
         </ul>
 
@@ -274,11 +222,11 @@ const noticesForRoom = (chatRoomId) => {
         </div>
 
         <div
-            v-if="orphanRoomNotices.length > 0"
+            v-if="roomNotices.length > 0"
             class="mt-3 space-y-2"
         >
             <div
-                v-for="notice in orphanRoomNotices"
+                v-for="notice in roomNotices"
                 :key="notice.id"
                 class="rounded-md border border-gray-200 bg-[bisque] p-3"
             >
