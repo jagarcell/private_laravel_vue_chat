@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Events\ChatMessageSent;
+use App\Models\ChatMessage;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -61,6 +62,14 @@ class ChatMessageApiTest extends TestCase
                 && $event->to_user_id === $toUser->id
                 && $event->message === 'Hello from test';
         });
+
+        $this->assertDatabaseHas('chat_messages', [
+            'from_user_id' => $fromUser->id,
+            'to_user_id' => $toUser->id,
+            'message' => 'Hello from test',
+        ]);
+
+        $this->assertSame(1, ChatMessage::query()->count());
     }
 
     /**

@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Events\ChatRequestMessage;
 use App\Models\User;
+use App\Support\ActiveChatConnectionsStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class ProfileTest extends TestCase
@@ -137,5 +140,36 @@ class ProfileTest extends TestCase
             ->assertRedirect('/profile');
 
         $this->assertNotNull($user->fresh());
+    }
+
+    public function test_account_deletion_closes_active_chats_and_notifies_peers(): void
+    {
+        Event::fake();
+
+        $user = User::factory()->create();
+        $peer = User::factory()->create();
+
+        /** @var ActiveChatConnectionsStore $connectionsStore */
+        $connectionsStore = app(ActiveChatConnectionsStore::class);
+        $connectionsStore->connectBidirectional($user->id, $peer->id);
+
+        $response = $this
+            ->actingAs($user)
+            ->delete('/profile', [
+                'password' => 'password',
+            ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertRedirect('/');
+
+        Event::assertDispatched(ChatRequestMessage::class, function (ChatRequestMessage $event) use ($user, $peer): bool {
+            return $event->from_user_id === $user->id
+                && $event->to_user_id === $peer->id
+                && $event->type === 'closed';
+        });
+
+        $this->assertSame([], $connectionsStore->connectedUserIds($user->id)->all());
+        $this->assertSame([], $connectionsStore->connectedUserIds($peer->id)->all());
     }
 }
