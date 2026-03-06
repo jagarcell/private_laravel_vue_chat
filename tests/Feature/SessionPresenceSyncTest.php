@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Events\UserOnlineStatusChanged;
 use App\Models\User;
-use App\Support\OnlineUsersStore;
+use App\Repositories\Users\OnlineUserRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -51,7 +51,7 @@ class SessionPresenceSyncTest extends TestCase
 
         $user = User::factory()->create();
 
-        app(OnlineUsersStore::class)->put([$user->id]);
+        app(OnlineUserRepository::class)->put([$user->id]);
 
         $this->artisan('presence:sync-expired-sessions')->assertSuccessful();
 
@@ -87,7 +87,7 @@ class SessionPresenceSyncTest extends TestCase
             'last_activity' => now()->getTimestamp(),
         ]);
 
-        app(OnlineUsersStore::class)->put([$user->id]);
+        app(OnlineUserRepository::class)->put([$user->id]);
 
         $this->artisan('presence:sync-expired-sessions')->assertSuccessful();
 
