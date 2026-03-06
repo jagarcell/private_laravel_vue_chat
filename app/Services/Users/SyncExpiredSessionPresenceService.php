@@ -3,10 +3,8 @@
 namespace App\Services\Users;
 
 use App\Events\UserOnlineStatusChanged;
+use App\Repositories\Users\UserSessionRepository;
 use App\Support\OnlineUsersStore;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Synchronizes persisted online presence against active database sessions.
@@ -20,9 +18,13 @@ class SyncExpiredSessionPresenceService
      * Create a new service instance.
      *
      * @param  OnlineUsersStore  $onlineUsersStore  Store of user IDs currently tracked as online.
+     * @param  UserSessionRepository  $userSessionRepository  Repository that resolves active users from sessions.
      * @return void
      */
-    public function __construct(private readonly OnlineUsersStore $onlineUsersStore) {}
+    public function __construct(
+        private readonly OnlineUsersStore $onlineUsersStore,
+        private readonly UserSessionRepository $userSessionRepository,
+    ) {}
 
     /**
      * Broadcast offline updates for users whose sessions are no longer active.
@@ -38,11 +40,11 @@ class SyncExpiredSessionPresenceService
      */
     public function handle(): int
     {
-        if (! $this->canResolveSessionOnlineUsers()) {
+        if (! $this->userSessionRepository->canResolveActiveUsers()) {
             return 0;
         }
 
-        $activeUserIds = $this->resolveActiveUserIds();
+        $activeUserIds = $this->userSessionRepository->activeUserIds();
         $previouslyOnlineUserIds = $this->onlineUsersStore->all();
         $expiredUserIds = $previouslyOnlineUserIds->diff($activeUserIds)->values();
 
@@ -53,41 +55,5 @@ class SyncExpiredSessionPresenceService
         $this->onlineUsersStore->put($activeUserIds);
 
         return $expiredUserIds->count();
-    }
-
-    /**
-     * Determine whether online users can be resolved from the sessions table.
-     *
-     * The sync runs only when the session driver is `database` and the
-     * `sessions` table exists in the current connection.
-     *
-     * @return bool
-     */
-    private function canResolveSessionOnlineUsers(): bool
-    {
-        return config('session.driver') === 'database' && Schema::hasTable('sessions');
-    }
-
-    /**
-     * Resolve unique user IDs considered active based on session last activity.
-     *
-     * Logic:
-     * 1) Compute the minimum accepted `last_activity` timestamp from session lifetime.
-     * 2) Query non-null `user_id` rows from `sessions` newer than that threshold.
-     * 3) Normalize IDs to integers and return a unique, re-indexed collection.
-     *
-     * @return Collection<int, int>
-     */
-    private function resolveActiveUserIds(): Collection
-    {
-        $minimumLastActivity = now()->subMinutes((int) config('session.lifetime', 120))->getTimestamp();
-
-        return DB::table('sessions')
-            ->whereNotNull('user_id')
-            ->where('last_activity', '>=', $minimumLastActivity)
-            ->pluck('user_id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->values();
     }
 }
