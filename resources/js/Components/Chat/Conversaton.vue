@@ -10,6 +10,10 @@ const props = defineProps({
         type: Object,
         default: null,
     },
+    selectedUserRequestState: {
+        type: String,
+        default: 'none',
+    },
     messageHistory: {
         type: Array,
         default: () => [],
@@ -22,8 +26,9 @@ const messageInput = ref('');
 const canSendMessage = computed(() => {
     const hasMessage = messageInput.value.trim().length > 0;
     const hasOnlineSelectedUser = Boolean(props.selectedUser?.is_online);
+    const hasConnectedSelectedUser = props.selectedUserRequestState === 'connected';
 
-    return hasMessage && hasOnlineSelectedUser;
+    return hasMessage && hasOnlineSelectedUser && hasConnectedSelectedUser;
 });
 
 const messageHistoryText = computed(() => {
