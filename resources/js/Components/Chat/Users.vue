@@ -8,9 +8,17 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    selectedUserId: {
+        type: Number,
+        default: null,
+    },
+    unreadIncomingCounts: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
-const emit = defineEmits(['request-chat', 'dismiss-declined', 'close-chat']);
+const emit = defineEmits(['request-chat', 'dismiss-declined', 'close-chat', 'select-user']);
 
 const canRequestChat = (user) => {
     const state = props.requestStates[user.id] ?? 'none';
@@ -19,6 +27,8 @@ const canRequestChat = (user) => {
 };
 
 const userState = (user) => props.requestStates[user.id] ?? 'none';
+const unreadIncomingCount = (user) => props.unreadIncomingCounts[user.id] ?? 0;
+const isSelectedUser = (user) => Number(props.selectedUserId) === Number(user.id);
 </script>
 
 <template>
@@ -33,7 +43,11 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
             <li
                 v-for="user in users"
                 :key="user.id"
-                class="rounded-md border border-gray-200 px-3 py-2"
+                class="cursor-pointer rounded-md border px-3 py-2"
+                :class="isSelectedUser(user)
+                    ? 'border-blue-400 bg-blue-50'
+                    : 'border-gray-200'"
+                @click="emit('select-user', user)"
             >
                 <div class="flex items-start justify-between gap-2">
                     <div>
@@ -41,14 +55,23 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                         <p class="text-xs text-gray-500">{{ user.email }}</p>
                     </div>
 
-                    <span
-                        class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
-                        :class="user.is_online
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'"
-                    >
-                        {{ user.is_online ? 'Online' : 'Offline' }}
-                    </span>
+                    <div class="flex items-center gap-2">
+                        <span
+                            v-if="!isSelectedUser(user) && unreadIncomingCount(user) > 0"
+                            class="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-medium text-white"
+                        >
+                            {{ unreadIncomingCount(user) }}
+                        </span>
+
+                        <span
+                            class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
+                            :class="user.is_online
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-red-100 text-red-700'"
+                        >
+                            {{ user.is_online ? 'Online' : 'Offline' }}
+                        </span>
+                    </div>
                 </div>
 
                 <div class="mt-3 flex items-center gap-2">
@@ -57,7 +80,7 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                         type="button"
                         class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                         :disabled="!canRequestChat(user)"
-                        @click="emit('request-chat', user)"
+                        @click.stop="emit('request-chat', user)"
                     >
                         Chat Request
                     </button>
@@ -66,7 +89,7 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                         v-else
                         type="button"
                         class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white"
-                        @click="emit('close-chat', user)"
+                        @click.stop="emit('close-chat', user)"
                     >
                         Close Chat
                     </button>
@@ -87,7 +110,7 @@ const userState = (user) => props.requestStates[user.id] ?? 'none';
                     <button
                         type="button"
                         class="rounded-md bg-blue-600 px-2 py-1 text-xs text-white"
-                        @click="emit('dismiss-declined', user)"
+                        @click.stop="emit('dismiss-declined', user)"
                     >
                         Dismiss
                     </button>

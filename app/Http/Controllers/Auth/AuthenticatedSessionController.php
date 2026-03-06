@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Events\UserOnlineStatusChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Services\Chat\HandleChatRequestLifecycleService;
 use App\Support\OnlineUsersStore;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,9 +26,13 @@ class AuthenticatedSessionController extends Controller
      * Create a new controller instance.
      *
      * @param  OnlineUsersStore  $onlineUsersStore  Tracks users currently considered online.
+     * @param  HandleChatRequestLifecycleService  $chatRequestLifecycleService  Handles chat request lifecycle events.
         * @return void
      */
-    public function __construct(private readonly OnlineUsersStore $onlineUsersStore) {}
+    public function __construct(
+        private readonly OnlineUsersStore $onlineUsersStore,
+        private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService,
+    ) {}
 
     /**
      * Render the login page.
@@ -95,6 +100,7 @@ class AuthenticatedSessionController extends Controller
         Auth::guard('web')->logout();
 
         if (! is_null($user)) {
+            $this->chatRequestLifecycleService->closeAllConnected($user);
             $this->onlineUsersStore->markOffline($user->id);
             event(new UserOnlineStatusChanged($user->id, false));
         }

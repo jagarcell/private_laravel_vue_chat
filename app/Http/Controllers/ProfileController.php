@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\Chat\HandleChatRequestLifecycleService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,14 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
+    /**
+     * Create a new controller instance.
+     *
+     * @param  HandleChatRequestLifecycleService  $chatRequestLifecycleService
+     * @return void
+     */
+    public function __construct(private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService) {}
+
     /**
      * Display the user's profile form.
      */
@@ -50,6 +59,10 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
+
+        if (! is_null($user)) {
+            $this->chatRequestLifecycleService->closeAllConnected($user);
+        }
 
         Auth::logout();
 

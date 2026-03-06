@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\ChatMessageSendRequest;
 use App\Http\Requests\Api\ChatRequestCloseRequest;
 use App\Http\Requests\Api\ChatRequestRespondRequest;
 use App\Http\Requests\Api\ChatRequestSendRequest;
+use App\Http\Resources\ChatMessageResource;
 use App\Http\Resources\ChatRequestActionResource;
+use App\Services\Chat\ManageChatMessagesService;
 use App\Services\Chat\HandleChatRequestLifecycleService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -21,9 +24,13 @@ class ChatRequestController extends Controller
      * Create a new controller instance.
      *
      * @param  HandleChatRequestLifecycleService  $chatRequestLifecycleService  Service that encapsulates chat request business logic.
+     * @param  ManageChatMessagesService  $manageChatMessagesService  Service that encapsulates direct message persistence rules.
      * @return void
      */
-    public function __construct(private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService) {}
+    public function __construct(
+        private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService,
+        private readonly ManageChatMessagesService $manageChatMessagesService,
+    ) {}
 
     /**
      * Send a chat request from the authenticated user to another user.
@@ -140,6 +147,42 @@ class ChatRequestController extends Controller
                 'action' => 'closed',
                 'to_user_id' => $toUserId,
             ])->resolve($request),
+        ]);
+    }
+
+    /**
+     * Send a direct chat message to the selected user.
+     *
+     * Logic:
+     * 1) Validate target user and message payload via FormRequest.
+     * 2) Resolve authenticated sender and reject unauthenticated requests.
+     * 3) Delegate online validation and broadcast dispatch to service layer.
+     * 4) Return standardized API success envelope using a resource payload.
+     *
+     * @param  ChatMessageSendRequest  $request
+     * @return JsonResponse
+     */
+    public function sendMessage(ChatMessageSendRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $fromUser = $request->user();
+
+        if (is_null($fromUser)) {
+            return ApiResponse::error('Unauthenticated.', 401);
+        }
+
+        try {
+            $toUserId = (int) $validated['to_user_id'];
+            $message = trim((string) $validated['message']);
+
+            $chatMessage = $this->manageChatMessagesService->send($fromUser, $toUserId, $message);
+        } catch (InvalidArgumentException $exception) {
+            return ApiResponse::error($exception->getMessage(), 422);
+        }
+
+        return ApiResponse::success('Message sent.', [
+            'chat_message' => ChatMessageResource::make($chatMessage)->resolve($request),
         ]);
     }
 }
