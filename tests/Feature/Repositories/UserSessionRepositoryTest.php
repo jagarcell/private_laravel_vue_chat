@@ -14,6 +14,23 @@ class UserSessionRepositoryTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_can_resolve_active_users_reflects_driver_and_table_availability(): void
+    {
+        /** @var UserSessionRepository $repository */
+        $repository = app(UserSessionRepository::class);
+
+        Config::set('session.driver', 'array');
+        $this->assertFalse($repository->canResolveActiveUsers());
+
+        Config::set('session.driver', 'database');
+
+        Schema::dropIfExists('sessions');
+        $this->assertFalse($repository->canResolveActiveUsers());
+
+        $this->createSessionsTableIfNeeded();
+        $this->assertTrue($repository->canResolveActiveUsers());
+    }
+
     public function test_it_returns_false_when_session_driver_is_not_database(): void
     {
         Config::set('session.driver', 'array');
@@ -69,6 +86,65 @@ class UserSessionRepositoryTest extends TestCase
         $this->assertTrue($repository->isUserOnline($activeUserId));
         $this->assertFalse($repository->isUserOnline($inactiveUserId));
         $this->assertFalse($repository->isUserOnline(999999));
+    }
+
+    public function test_active_user_ids_returns_unique_active_ids_only(): void
+    {
+        Config::set('session.driver', 'database');
+        Config::set('session.lifetime', 120);
+
+        $this->createSessionsTableIfNeeded();
+
+        DB::table('sessions')->insert([
+            [
+                'id' => 'active-1',
+                'user_id' => 101,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'PHPUnit',
+                'payload' => base64_encode('active-1'),
+                'last_activity' => now()->subMinutes(1)->getTimestamp(),
+            ],
+            [
+                'id' => 'active-1-duplicate',
+                'user_id' => 101,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'PHPUnit',
+                'payload' => base64_encode('active-1-dup'),
+                'last_activity' => now()->subMinutes(2)->getTimestamp(),
+            ],
+            [
+                'id' => 'active-2',
+                'user_id' => 202,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'PHPUnit',
+                'payload' => base64_encode('active-2'),
+                'last_activity' => now()->subMinutes(3)->getTimestamp(),
+            ],
+            [
+                'id' => 'inactive-old',
+                'user_id' => 303,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'PHPUnit',
+                'payload' => base64_encode('inactive'),
+                'last_activity' => now()->subMinutes(500)->getTimestamp(),
+            ],
+            [
+                'id' => 'null-user-id',
+                'user_id' => null,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'PHPUnit',
+                'payload' => base64_encode('null-user'),
+                'last_activity' => now()->subMinutes(2)->getTimestamp(),
+            ],
+        ]);
+
+        /** @var UserSessionRepository $repository */
+        $repository = app(UserSessionRepository::class);
+
+        $activeUserIds = $repository->activeUserIds()->all();
+        sort($activeUserIds);
+
+        $this->assertSame([101, 202], $activeUserIds);
     }
 
     private function createSessionsTableIfNeeded(): void

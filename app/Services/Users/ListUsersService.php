@@ -3,15 +3,31 @@
 namespace App\Services\Users;
 
 use App\Models\User;
+use App\Repositories\Users\UserRepository;
+use App\Repositories\Users\UserSessionRepository;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Retrieves users with optional filters and computed online presence state.
  */
 class ListUsersService
 {
+    /**
+     * Create a new service instance.
+     *
+     * Logic:
+     * 1) Inject user repository for directory queries.
+     * 2) Inject session repository for online presence resolution.
+     *
+     * @param  UserRepository  $userRepository
+     * @param  UserSessionRepository  $userSessionRepository
+     * @return void
+     */
+    public function __construct(
+        private readonly UserRepository $userRepository,
+        private readonly UserSessionRepository $userSessionRepository,
+    ) {}
+
     /**
      * Build the users list payload for API responses.
      *
@@ -30,20 +46,7 @@ class ListUsersService
     {
         $onlineUserIds = $this->resolveOnlineUserIds($authenticatedUser);
 
-        return User::query()
-            ->select(['id', 'name', 'email'])
-            ->when(
-                filled($filters['search'] ?? null),
-                fn ($query) => $query->where(function ($scopedQuery) use ($filters): void {
-                    $search = (string) $filters['search'];
-
-                    $scopedQuery
-                        ->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
-                })
-            )
-            ->orderBy('name')
-            ->get()
+        return $this->userRepository->directory($filters)
             ->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -66,19 +69,7 @@ class ListUsersService
      */
     private function resolveOnlineUserIds(User $authenticatedUser): Collection
     {
-        $onlineUserIds = collect();
-
-        if (config('session.driver') === 'database' && Schema::hasTable('sessions')) {
-            $minimumLastActivity = now()->subMinutes((int) config('session.lifetime', 120))->getTimestamp();
-
-            $onlineUserIds = DB::table('sessions')
-                ->whereNotNull('user_id')
-                ->where('last_activity', '>=', $minimumLastActivity)
-                ->pluck('user_id')
-                ->map(fn (mixed $id): int => (int) $id)
-                ->unique()
-                ->values();
-        }
+        $onlineUserIds = $this->userSessionRepository->activeUserIds();
 
         return $onlineUserIds
             ->push($authenticatedUser->id)
