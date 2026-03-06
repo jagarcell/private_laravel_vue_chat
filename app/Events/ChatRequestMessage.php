@@ -17,10 +17,18 @@ class ChatRequestMessage implements ShouldBroadcastNow
     /**
      * Create a new chat request message event.
      *
+     * Logic:
+     * 1) Capture sender/recipient identity for targeted delivery.
+     * 2) Store type discriminator used by frontend branching logic.
+     * 3) Attach optional room/invite metadata when relevant.
+     *
      * @param  int  $to_user_id  Target user ID that receives this event.
      * @param  int  $from_user_id  Source user ID that triggered this event.
      * @param  string  $from_user_name  Source user display name.
-     * @param  string  $type  Message type (`requested`, `accepted`, `declined`, `closed`).
+     * @param  string  $type  Message type (`requested`, `accepted`, `declined`, `closed`, `chat_room_invited`, `chat_room_invite_accepted`, `chat_room_closed`, `chat_room_user_left`).
+     * @param  int|null  $invite_id  Related room invite ID for room invite events.
+     * @param  int|null  $room_id  Related chat room ID for room invite events.
+     * @param  string|null  $room_name  Related chat room name for room invite events.
      * @return void
      */
     public function __construct(
@@ -28,6 +36,9 @@ class ChatRequestMessage implements ShouldBroadcastNow
         public int $from_user_id,
         public string $from_user_name,
         public string $type,
+        public ?int $invite_id = null,
+        public ?int $room_id = null,
+        public ?string $room_name = null,
     ) {}
 
     /**
@@ -47,6 +58,10 @@ class ChatRequestMessage implements ShouldBroadcastNow
     /**
      * Define the frontend event name.
      *
+     * Logic:
+     * 1) Return a stable event alias consumed by Echo listeners.
+     * 2) Keep one event name for all chat-request lifecycle payloads.
+     *
      * @return string
      */
     public function broadcastAs(): string
@@ -60,6 +75,7 @@ class ChatRequestMessage implements ShouldBroadcastNow
      * Logic:
      * 1) Include target/source user identity fields.
      * 2) Include message type so clients can branch UI behavior.
+     * 3) Include optional room/invite fields for specific flows.
      *
      * @return array<string, mixed>
      */
@@ -70,6 +86,9 @@ class ChatRequestMessage implements ShouldBroadcastNow
             'from_user_id' => $this->from_user_id,
             'from_user_name' => $this->from_user_name,
             'type' => $this->type,
+            'invite_id' => $this->invite_id,
+            'room_id' => $this->room_id,
+            'room_name' => $this->room_name,
         ];
     }
 }
