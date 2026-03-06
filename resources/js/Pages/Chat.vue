@@ -14,6 +14,9 @@ const incomingRequest = ref(null);
 const selectedUserId = ref(null);
 const messageHistories = ref({});
 const unreadIncomingCounts = ref({});
+const chatRooms = ref([]);
+const roomInvites = ref([]);
+const roomNotices = ref([]);
 
 const requesterId = computed(() => page.props.auth?.user?.id ?? null);
 const normalizeUserId = (value) => {
@@ -220,6 +223,117 @@ const loadUsers = async () => {
     sanitizeStateForKnownUsers();
 };
 
+const loadChatRooms = async () => {
+    const response = await axios.get('/api/chat-rooms');
+
+    chatRooms.value = response.data?.data?.rooms ?? [];
+};
+
+const loadRoomInvites = async () => {
+    const response = await axios.get('/api/chat-rooms/invites');
+
+    roomInvites.value = response.data?.data?.invites ?? [];
+};
+
+const createChatRoom = async (payload) => {
+    const response = await axios.post('/api/chat-rooms', {
+        name: String(payload?.name ?? '').trim(),
+        user_ids: Array.isArray(payload?.user_ids) ? payload.user_ids : [],
+    });
+
+    const chatRoom = response.data?.data?.chat_room;
+
+    if (chatRoom) {
+        chatRooms.value = [chatRoom, ...chatRooms.value];
+    }
+};
+
+const removeRoomInviteFromState = (inviteId) => {
+    roomInvites.value = roomInvites.value.filter((invite) => Number(invite.id) !== Number(inviteId));
+};
+
+const removeChatRoomFromState = (chatRoomId) => {
+    chatRooms.value = chatRooms.value.filter((chatRoom) => Number(chatRoom.id) !== Number(chatRoomId));
+};
+
+const addRoomNotice = (message, roomId = null) => {
+    if (!message) {
+        return;
+    }
+
+    const noticeId = `room-notice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    roomNotices.value = [
+        {
+            id: noticeId,
+            room_id: roomId,
+            message: String(message),
+        },
+        ...roomNotices.value,
+    ];
+};
+
+const dismissRoomNotice = (notice) => {
+    const noticeId = String(notice?.id ?? '');
+
+    roomNotices.value = roomNotices.value.filter((roomNotice) => String(roomNotice.id) !== noticeId);
+};
+
+const respondRoomInvite = async (invite, action) => {
+    const inviteId = Number(invite?.id ?? 0);
+
+    if (!inviteId || !['accept', 'decline'].includes(action)) {
+        return;
+    }
+
+    const response = await axios.post(`/api/chat-rooms/invites/${inviteId}/respond`, {
+        action,
+    });
+
+    const chatRoom = response.data?.data?.chat_room ?? null;
+
+    if (action === 'accept' && chatRoom) {
+        chatRooms.value = [
+            chatRoom,
+            ...chatRooms.value.filter((existingRoom) => Number(existingRoom.id) !== Number(chatRoom.id)),
+        ];
+    }
+
+    removeRoomInviteFromState(inviteId);
+};
+
+const acceptRoomInvite = async (invite) => {
+    await respondRoomInvite(invite, 'accept');
+};
+
+const declineRoomInvite = async (invite) => {
+    await respondRoomInvite(invite, 'decline');
+};
+
+const closeChatRoom = async (chatRoom) => {
+    const chatRoomId = Number(chatRoom?.id ?? 0);
+
+    if (!chatRoomId) {
+        return;
+    }
+
+    await axios.post(`/api/chat-rooms/${chatRoomId}/close`);
+
+    removeChatRoomFromState(chatRoomId);
+};
+
+const leaveChatRoom = async (chatRoom) => {
+    const chatRoomId = Number(chatRoom?.id ?? 0);
+
+    if (!chatRoomId) {
+        return;
+    }
+
+    await axios.post(`/api/chat-rooms/${chatRoomId}/leave`);
+
+    removeChatRoomFromState(chatRoomId);
+};
+
 const setRequestState = (userId, state) => {
     requestStates.value = {
         ...requestStates.value,
@@ -408,6 +522,64 @@ const handleChatRequestMessage = (event) => {
         return;
     }
 
+    if (type === 'chat_room_invited') {
+        const inviteId = Number(event?.invite_id ?? 0);
+        const roomId = Number(event?.room_id ?? 0);
+
+        if (!inviteId || !roomId) {
+            return;
+        }
+
+        const alreadyExists = roomInvites.value.some((invite) => Number(invite.id) === inviteId);
+
+        if (alreadyExists) {
+            return;
+        }
+
+        roomInvites.value = [
+            {
+                id: inviteId,
+                chat_room_id: roomId,
+                chat_room_name: String(event?.room_name ?? 'Chat Room'),
+                from_user_id: fromUserId,
+                from_user_name: String(event?.from_user_name ?? 'User'),
+            },
+            ...roomInvites.value,
+        ];
+
+        return;
+    }
+
+    if (type === 'chat_room_invite_accepted') {
+        loadChatRooms();
+        return;
+    }
+
+    if (type === 'chat_room_closed') {
+        const roomId = Number(event?.room_id ?? 0);
+        const requesterName = String(event?.from_user_name ?? 'User');
+        const roomNameFromEvent = String(event?.room_name ?? '').trim();
+        const roomNameFromState = chatRooms.value.find((chatRoom) => Number(chatRoom.id) === roomId)?.name ?? '';
+        const roomName = roomNameFromEvent || String(roomNameFromState).trim() || 'Chat Room';
+
+        if (roomId) {
+            removeChatRoomFromState(roomId);
+        }
+
+        addRoomNotice(`Chat room ${roomName} was closed by ${requesterName}`, roomId || null);
+        return;
+    }
+
+    if (type === 'chat_room_user_left') {
+        const roomId = Number(event?.room_id ?? 0);
+        const leftUserName = String(event?.from_user_name ?? 'User');
+        const roomName = String(event?.room_name ?? 'Chat Room');
+
+        loadChatRooms();
+        addRoomNotice(`User ${leftUserName} has left the chat room ${roomName}`, roomId || null);
+        return;
+    }
+
     if (type === 'accepted') {
         setRequestState(fromUserId, 'connected');
 
@@ -482,6 +654,8 @@ onMounted(() => {
 
     loadUsers().then(() => {
         loadUnreadIncomingCounts();
+        loadChatRooms();
+        loadRoomInvites();
 
         if (selectedUserId.value) {
             loadConversationForUser(Number(selectedUserId.value));
@@ -563,7 +737,19 @@ onUnmounted(() => {
                                 @close-chat="closeChat"
                                 @select-user="selectUser"
                             />
-                            <ChatRooms />
+                            <ChatRooms
+                                :chat-rooms="chatRooms"
+                                :room-invites="roomInvites"
+                                :room-notices="roomNotices"
+                                :users="users"
+                                :authenticated-user-id="requesterId"
+                                @create-chat-room="createChatRoom"
+                                @accept-room-invite="acceptRoomInvite"
+                                @decline-room-invite="declineRoomInvite"
+                                @close-chat-room="closeChatRoom"
+                                @confirm-leave-chat-room="leaveChatRoom"
+                                @dismiss-room-notice="dismissRoomNotice"
+                            />
                         </div>
                     </aside>
 
