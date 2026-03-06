@@ -111,18 +111,58 @@ const sanitizeStateForKnownUsers = () => {
     }
 };
 
-const formatMessageLine = (chatMessage) => {
-    if (chatMessage.is_mine) {
-        return `You: ${chatMessage.message}`;
-    }
+/**
+ * Normalize an incoming chat message object to the UI message shape.
+ *
+ * Logic:
+ * 1) Coerce IDs to positive integers when valid.
+ * 2) Normalize optional fields to safe defaults.
+ * 3) Keep receipt-related fields (`is_mine`, `read_at`) for rendering.
+ *
+ * @param {Record<string, any>} chatMessage
+ * @returns {{
+ *   id: number|null,
+ *   from_user_id: number|null,
+ *   to_user_id: number|null,
+ *   from_user_name: string,
+ *   message: string,
+ *   is_mine: boolean,
+ *   read_at: string|null,
+ *   created_at: string|null
+ * }}
+ */
+const normalizeMessage = (chatMessage) => {
+    const id = Number(chatMessage?.id ?? 0);
+    const fromUserId = Number(chatMessage?.from_user_id ?? 0);
+    const toUserId = Number(chatMessage?.to_user_id ?? 0);
 
-    return `${chatMessage.from_user_name ?? 'User'}: ${chatMessage.message}`;
+    return {
+        id: Number.isInteger(id) && id > 0 ? id : null,
+        from_user_id: Number.isInteger(fromUserId) && fromUserId > 0 ? fromUserId : null,
+        to_user_id: Number.isInteger(toUserId) && toUserId > 0 ? toUserId : null,
+        from_user_name: String(chatMessage?.from_user_name ?? 'User'),
+        message: String(chatMessage?.message ?? ''),
+        is_mine: Boolean(chatMessage?.is_mine),
+        read_at: chatMessage?.read_at ?? null,
+        created_at: chatMessage?.created_at ?? null,
+    };
 };
 
+/**
+ * Replace one user's conversation history with normalized messages.
+ *
+ * Logic:
+ * 1) Normalize each raw API message.
+ * 2) Update only selected user's history key in reactive map.
+ *
+ * @param {number} userId
+ * @param {Array<Record<string, any>>} messages
+ * @returns {void}
+ */
 const setConversationHistory = (userId, messages) => {
     messageHistories.value = {
         ...messageHistories.value,
-        [userId]: messages.map(formatMessageLine),
+        [userId]: messages.map(normalizeMessage),
     };
 };
 
@@ -266,12 +306,71 @@ const incrementUnreadIncoming = (userId) => {
     };
 };
 
-const appendMessageToHistory = (userId, text) => {
+/**
+ * Append one message to a conversation, skipping duplicates by message ID.
+ *
+ * Logic:
+ * 1) Normalize incoming message payload.
+ * 2) Skip insert when same message ID already exists.
+ * 3) Append new message to the target user's history list.
+ *
+ * @param {number} userId
+ * @param {Record<string, any>} chatMessage
+ * @returns {void}
+ */
+const appendMessageToHistory = (userId, chatMessage) => {
     const existing = messageHistories.value[userId] ?? [];
+    const normalizedMessage = normalizeMessage(chatMessage);
+
+    if (normalizedMessage.id && existing.some((message) => message.id === normalizedMessage.id)) {
+        return;
+    }
 
     messageHistories.value = {
         ...messageHistories.value,
-        [userId]: [...existing, text],
+        [userId]: [...existing, normalizedMessage],
+    };
+};
+
+/**
+ * Apply read-receipt timestamp updates to matching outgoing messages.
+ *
+ * Logic:
+ * 1) Normalize and validate incoming message ID list.
+ * 2) Update only messages that are mine and whose IDs are listed.
+ * 3) Persist merged history back into reactive conversation map.
+ *
+ * @param {number} userId
+ * @param {Array<number|string>} messageIds
+ * @param {string|null|undefined} readAt
+ * @returns {void}
+ */
+const applyReadReceiptToHistory = (userId, messageIds, readAt) => {
+    const existing = messageHistories.value[userId] ?? [];
+    const normalizedMessageIds = new Set(
+        (messageIds ?? [])
+            .map((messageId) => Number(messageId))
+            .filter((messageId) => Number.isInteger(messageId) && messageId > 0),
+    );
+
+    if (normalizedMessageIds.size === 0 || existing.length === 0) {
+        return;
+    }
+
+    const nextHistory = existing.map((chatMessage) => {
+        if (!chatMessage.is_mine || !chatMessage.id || !normalizedMessageIds.has(chatMessage.id)) {
+            return chatMessage;
+        }
+
+        return {
+            ...chatMessage,
+            read_at: readAt ?? chatMessage.read_at ?? new Date().toISOString(),
+        };
+    });
+
+    messageHistories.value = {
+        ...messageHistories.value,
+        [userId]: nextHistory,
     };
 };
 
@@ -292,7 +391,7 @@ const sendMessage = async (content) => {
     const chatMessage = response.data?.data?.chat_message;
 
     if (chatMessage) {
-        appendMessageToHistory(targetUser.id, formatMessageLine(chatMessage));
+        appendMessageToHistory(targetUser.id, chatMessage);
     }
 };
 
@@ -328,14 +427,22 @@ const handleChatRequestMessage = (event) => {
 
 const handleChatMessageSent = (event) => {
     const fromUserId = Number(event?.from_user_id ?? 0);
-    const fromUserName = String(event?.from_user_name ?? 'User');
     const message = String(event?.message ?? '').trim();
 
     if (!fromUserId || message.length === 0) {
         return;
     }
 
-    appendMessageToHistory(fromUserId, `${fromUserName}: ${message}`);
+    appendMessageToHistory(fromUserId, {
+        id: Number(event?.id ?? 0),
+        from_user_id: fromUserId,
+        from_user_name: String(event?.from_user_name ?? 'User'),
+        to_user_id: requesterId.value,
+        message,
+        is_mine: false,
+        read_at: null,
+        created_at: event?.created_at ?? null,
+    });
 
     const isConnectedUser = (requestStates.value[fromUserId] ?? 'none') === 'connected';
     const isSelectedConversation = Number(selectedUserId.value) === fromUserId;
@@ -347,6 +454,27 @@ const handleChatMessageSent = (event) => {
     if (isSelectedConversation) {
         markConversationAsRead(fromUserId);
     }
+};
+
+/**
+ * Handle realtime read-receipt events and apply them to local history.
+ *
+ * Logic:
+ * 1) Validate reader ID and message ID list from event payload.
+ * 2) Apply read receipt updates to that conversation history.
+ *
+ * @param {Record<string, any>} event
+ * @returns {void}
+ */
+const handleChatMessagesRead = (event) => {
+    const readerUserId = Number(event?.reader_user_id ?? 0);
+    const messageIds = Array.isArray(event?.message_ids) ? event.message_ids : [];
+
+    if (!readerUserId || messageIds.length === 0) {
+        return;
+    }
+
+    applyReadReceiptToHistory(readerUserId, messageIds, event?.read_at ?? null);
 };
 
 onMounted(() => {
@@ -380,7 +508,8 @@ onMounted(() => {
                 .listen('.chat.request.message', handleChatRequestMessage);
 
             window.Echo.private(`users.chat-message.${requesterId.value}`)
-                .listen('.chat.message.sent', handleChatMessageSent);
+                .listen('.chat.message.sent', handleChatMessageSent)
+                .listen('.chat.messages.read', handleChatMessagesRead);
         }
     }
 });
@@ -402,7 +531,8 @@ onUnmounted(() => {
                 .stopListening('.chat.request.message', handleChatRequestMessage);
 
             window.Echo.private(`users.chat-message.${requesterId.value}`)
-                .stopListening('.chat.message.sent', handleChatMessageSent);
+                .stopListening('.chat.message.sent', handleChatMessageSent)
+                .stopListening('.chat.messages.read', handleChatMessagesRead);
         }
     }
 });
