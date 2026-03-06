@@ -3,8 +3,8 @@
 namespace App\Services\Users;
 
 use App\Events\UserOnlineStatusChanged;
+use App\Repositories\Users\OnlineUserRepository;
 use App\Repositories\Users\UserSessionRepository;
-use App\Support\OnlineUsersStore;
 
 /**
  * Synchronizes persisted online presence against active database sessions.
@@ -16,13 +16,17 @@ class SyncExpiredSessionPresenceService
 {
     /**
      * Create a new service instance.
+    *
+    * Logic:
+    * 1) Inject online-user repository for tracked presence state.
+    * 2) Inject session repository for active session resolution.
      *
-     * @param  OnlineUsersStore  $onlineUsersStore  Store of user IDs currently tracked as online.
+     * @param  OnlineUserRepository  $onlineUserRepository  Repository of user IDs currently tracked as online.
      * @param  UserSessionRepository  $userSessionRepository  Repository that resolves active users from sessions.
      * @return void
      */
     public function __construct(
-        private readonly OnlineUsersStore $onlineUsersStore,
+        private readonly OnlineUserRepository $onlineUserRepository,
         private readonly UserSessionRepository $userSessionRepository,
     ) {}
 
@@ -34,7 +38,7 @@ class SyncExpiredSessionPresenceService
      * 2) Load currently active user IDs from the sessions table.
      * 3) Diff tracked-online IDs against active IDs to find expired users.
      * 4) Broadcast offline presence event for each expired user.
-     * 5) Replace tracked-online store with the currently active IDs.
+    * 5) Replace tracked-online repository state with the currently active IDs.
      *
      * @return int Number of users marked offline during this sync pass.
      */
@@ -45,14 +49,14 @@ class SyncExpiredSessionPresenceService
         }
 
         $activeUserIds = $this->userSessionRepository->activeUserIds();
-        $previouslyOnlineUserIds = $this->onlineUsersStore->all();
+        $previouslyOnlineUserIds = $this->onlineUserRepository->all();
         $expiredUserIds = $previouslyOnlineUserIds->diff($activeUserIds)->values();
 
         $expiredUserIds->each(function (int $userId): void {
             event(new UserOnlineStatusChanged($userId, false));
         });
 
-        $this->onlineUsersStore->put($activeUserIds);
+        $this->onlineUserRepository->put($activeUserIds);
 
         return $expiredUserIds->count();
     }

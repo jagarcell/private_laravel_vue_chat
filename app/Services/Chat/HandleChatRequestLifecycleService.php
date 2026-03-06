@@ -4,7 +4,7 @@ namespace App\Services\Chat;
 
 use App\Events\ChatRequestMessage;
 use App\Models\User;
-use App\Support\ActiveChatConnectionsStore;
+use App\Repositories\Chat\ActiveChatConnectionRepository;
 use InvalidArgumentException;
 
 /**
@@ -16,13 +16,13 @@ class HandleChatRequestLifecycleService
      * Create a new service instance.
      *
      * Logic:
-     * 1) Inject active-chat connection store.
-     * 2) Reuse store to keep accept/close/logout flows in sync.
+      * 1) Inject active-chat connection repository.
+      * 2) Reuse repository to keep accept/close/logout flows in sync.
      *
-     * @param  ActiveChatConnectionsStore  $activeChatConnectionsStore
+      * @param  ActiveChatConnectionRepository  $activeChatConnectionRepository
      * @return void
      */
-    public function __construct(private readonly ActiveChatConnectionsStore $activeChatConnectionsStore) {}
+     public function __construct(private readonly ActiveChatConnectionRepository $activeChatConnectionRepository) {}
 
     /**
      * Process a new chat request action.
@@ -67,11 +67,11 @@ class HandleChatRequestLifecycleService
         $type = $action === 'accept' ? 'accepted' : 'declined';
 
         if ($type === 'accepted') {
-            $this->activeChatConnectionsStore->connectBidirectional((int) $fromUser->id, $requesterUserId);
+            $this->activeChatConnectionRepository->connectBidirectional((int) $fromUser->id, $requesterUserId);
         }
 
         if ($type === 'declined') {
-            $this->activeChatConnectionsStore->disconnectBidirectional((int) $fromUser->id, $requesterUserId);
+            $this->activeChatConnectionRepository->disconnectBidirectional((int) $fromUser->id, $requesterUserId);
         }
 
         $this->broadcast(
@@ -100,7 +100,7 @@ class HandleChatRequestLifecycleService
             errorMessage: 'You cannot close chat with yourself.',
         );
 
-        $this->activeChatConnectionsStore->disconnectBidirectional((int) $fromUser->id, $toUserId);
+        $this->activeChatConnectionRepository->disconnectBidirectional((int) $fromUser->id, $toUserId);
 
         $this->broadcast(
             fromUser: $fromUser,
@@ -113,7 +113,7 @@ class HandleChatRequestLifecycleService
      * Close all active chats for a user and notify connected peers.
      *
      * Logic:
-     * 1) Resolve all currently connected peer user IDs from the store.
+    * 1) Resolve all currently connected peer user IDs from the repository.
      * 2) Remove those connections from the active map.
      * 3) Broadcast `closed` event to each previously connected peer.
      *
@@ -122,7 +122,7 @@ class HandleChatRequestLifecycleService
      */
     public function closeAllConnected(User $fromUser): void
     {
-        $peerUserIds = $this->activeChatConnectionsStore->disconnectAllForUser((int) $fromUser->id);
+        $peerUserIds = $this->activeChatConnectionRepository->disconnectAllForUser((int) $fromUser->id);
 
         foreach ($peerUserIds as $peerUserId) {
             $this->broadcast(

@@ -6,7 +6,7 @@ use App\Events\UserOnlineStatusChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Services\Chat\HandleChatRequestLifecycleService;
-use App\Support\OnlineUsersStore;
+use App\Repositories\Users\OnlineUserRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,13 +24,17 @@ class AuthenticatedSessionController extends Controller
 {
     /**
      * Create a new controller instance.
+      *
+      * Logic:
+      * 1) Inject online-user repository used to track presence state.
+      * 2) Inject chat-request lifecycle service used to close active chats on logout.
      *
-     * @param  OnlineUsersStore  $onlineUsersStore  Tracks users currently considered online.
+     * @param  OnlineUserRepository  $onlineUserRepository  Tracks users currently considered online.
      * @param  HandleChatRequestLifecycleService  $chatRequestLifecycleService  Handles chat request lifecycle events.
-        * @return void
+      * @return void
      */
     public function __construct(
-        private readonly OnlineUsersStore $onlineUsersStore,
+        private readonly OnlineUserRepository $onlineUserRepository,
         private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService,
     ) {}
 
@@ -56,7 +60,7 @@ class AuthenticatedSessionController extends Controller
      *
      * Flow:
      * 1) Validate and authenticate credentials via LoginRequest.
-     * 2) If authentication succeeds, mark the user as online in the presence store.
+    * 2) If authentication succeeds, mark the user as online in the presence repository.
      * 3) Broadcast an online presence event for realtime UI updates.
      * 4) Regenerate session ID to prevent session fixation.
      * 5) Redirect to the intended URL, defaulting to chat home.
@@ -71,7 +75,7 @@ class AuthenticatedSessionController extends Controller
         $user = $request->user();
 
         if (! is_null($user)) {
-            $this->onlineUsersStore->markOnline($user->id);
+            $this->onlineUserRepository->markOnline($user->id);
             event(new UserOnlineStatusChanged($user->id, true));
         }
 
@@ -101,7 +105,7 @@ class AuthenticatedSessionController extends Controller
 
         if (! is_null($user)) {
             $this->chatRequestLifecycleService->closeAllConnected($user);
-            $this->onlineUsersStore->markOffline($user->id);
+            $this->onlineUserRepository->markOffline($user->id);
             event(new UserOnlineStatusChanged($user->id, false));
         }
 
