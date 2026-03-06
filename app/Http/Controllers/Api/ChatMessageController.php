@@ -85,11 +85,11 @@ class ChatMessageController extends Controller
     /**
      * Mark unread incoming messages from a specific user as read.
      *
-        * Logic:
-        * 1) Resolve authenticated user from request context.
-        * 2) Mark unread rows for target conversation as read.
-        * 3) Return updated-row count in API success envelope.
-        *
+     * Logic:
+     * 1) Resolve authenticated user from request context.
+     * 2) Mark unread rows for target conversation as read with receipt broadcast.
+     * 3) Return updated-row count in API success envelope.
+     *
      * @param  ChatConversationMarkReadRequest  $request
      * @param  User  $user
      * @return JsonResponse
@@ -98,10 +98,10 @@ class ChatMessageController extends Controller
     {
         $authenticatedUser = $this->resolveAuthenticatedUserService->handle($request);
 
-        $updatedCount = $this->manageChatMessagesService->markConversationAsRead($authenticatedUser, $user);
+        $result = $this->manageChatMessagesService->markConversationAsReadWithReceipt($authenticatedUser, $user);
 
         return ApiResponse::success('Conversation marked as read.', [
-            'updated_count' => $updatedCount,
+            'updated_count' => $result['updated_count'],
         ]);
     }
 }

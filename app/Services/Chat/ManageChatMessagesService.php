@@ -3,6 +3,7 @@
 namespace App\Services\Chat;
 
 use App\Events\ChatMessageSent;
+use App\Events\ChatMessagesRead;
 use App\Models\ChatMessage;
 use App\Models\User;
 use App\Repositories\Chat\ChatMessageRepository;
@@ -123,12 +124,55 @@ class ManageChatMessagesService
     }
 
     /**
+     * Mark unread messages as read and broadcast read receipt to original sender.
+     *
+     * Logic:
+     * 1) Collect unread incoming message IDs before updating timestamps.
+     * 2) Return early when there is nothing new to mark as read.
+     * 3) Mark unread messages as read in persistence layer.
+     * 4) Broadcast read-receipt event back to original sender.
+     * 5) Return update summary for controller/API response usage.
+     *
+     * @param  User  $authenticatedUser
+     * @param  User  $otherUser
+     * @return array{updated_count:int,message_ids:array<int,int>,read_at:string|null}
+     */
+    public function markConversationAsReadWithReceipt(User $authenticatedUser, User $otherUser): array
+    {
+        $messageIds = $this->chatMessageRepository->unreadIncomingMessageIds($authenticatedUser, $otherUser);
+
+        if (count($messageIds) === 0) {
+            return [
+                'updated_count' => 0,
+                'message_ids' => [],
+                'read_at' => null,
+            ];
+        }
+
+        $updatedCount = $this->chatMessageRepository->markConversationAsRead($authenticatedUser, $otherUser);
+        $readAt = now()->toISOString();
+
+        event(new ChatMessagesRead(
+            notify_user_id: (int) $otherUser->id,
+            reader_user_id: (int) $authenticatedUser->id,
+            message_ids: $messageIds,
+            read_at: $readAt,
+        ));
+
+        return [
+            'updated_count' => $updatedCount,
+            'message_ids' => $messageIds,
+            'read_at' => $readAt,
+        ];
+    }
+
+    /**
      * Validate that source and destination users are different.
      *
-        * Logic:
-        * 1) Compare sender and recipient IDs.
-        * 2) Throw a domain validation exception when IDs match.
-        *
+     * Logic:
+     * 1) Compare sender and recipient IDs.
+     * 2) Throw a domain validation exception when IDs match.
+     *
      * @param  int  $fromUserId
      * @param  int  $toUserId
      * @param  string  $errorMessage
@@ -140,5 +184,4 @@ class ManageChatMessagesService
             throw new InvalidArgumentException($errorMessage);
         }
     }
-
 }
