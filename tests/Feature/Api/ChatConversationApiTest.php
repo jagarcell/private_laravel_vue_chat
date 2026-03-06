@@ -12,6 +12,26 @@ class ChatConversationApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_chat_conversation_endpoints_require_authentication(): void
+    {
+        $otherUser = User::factory()->create();
+
+        $this->getJson("/api/chat-messages/conversation/{$otherUser->id}")
+            ->assertUnauthorized()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Unauthenticated.');
+
+        $this->getJson('/api/chat-messages/unread-counts')
+            ->assertUnauthorized()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Unauthenticated.');
+
+        $this->postJson("/api/chat-messages/conversation/{$otherUser->id}/read")
+            ->assertUnauthorized()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Unauthenticated.');
+    }
+
     /**
      * Verify that conversation endpoint returns persisted messages in both directions.
      *
@@ -122,5 +142,21 @@ class ChatConversationApiTest extends TestCase
                 ->whereNull('read_at')
                 ->count(),
         );
+    }
+
+    public function test_conversation_endpoint_validates_limit_query_parameter(): void
+    {
+        $authenticatedUser = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        Sanctum::actingAs($authenticatedUser);
+
+        $response = $this->getJson("/api/chat-messages/conversation/{$otherUser->id}?limit=0");
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Validation failed.')
+            ->assertJsonValidationErrors(['limit']);
     }
 }
