@@ -42,14 +42,14 @@ jobs:
           cp .env.example .env || true
           php artisan key:generate --ansi || true
 
+      - name: Build frontend assets
+        run: npm run build
+
       - name: Run backend tests
         env:
           DB_CONNECTION: sqlite
           DB_DATABASE: ':memory:'
         run: php artisan test
-
-      - name: Build frontend assets
-        run: npm run build
 
   deploy:
     name: Deploy
