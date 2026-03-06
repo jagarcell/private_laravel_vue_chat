@@ -9,6 +9,7 @@ use App\Http\Requests\Api\ChatRequestRespondRequest;
 use App\Http\Requests\Api\ChatRequestSendRequest;
 use App\Http\Resources\ChatMessageResource;
 use App\Http\Resources\ChatRequestActionResource;
+use App\Services\Chat\ManageChatMessagesService;
 use App\Services\Chat\HandleChatRequestLifecycleService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -23,9 +24,13 @@ class ChatRequestController extends Controller
      * Create a new controller instance.
      *
      * @param  HandleChatRequestLifecycleService  $chatRequestLifecycleService  Service that encapsulates chat request business logic.
+     * @param  ManageChatMessagesService  $manageChatMessagesService  Service that encapsulates direct message persistence rules.
      * @return void
      */
-    public function __construct(private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService) {}
+    public function __construct(
+        private readonly HandleChatRequestLifecycleService $chatRequestLifecycleService,
+        private readonly ManageChatMessagesService $manageChatMessagesService,
+    ) {}
 
     /**
      * Send a chat request from the authenticated user to another user.
@@ -171,16 +176,13 @@ class ChatRequestController extends Controller
             $toUserId = (int) $validated['to_user_id'];
             $message = trim((string) $validated['message']);
 
-            $this->chatRequestLifecycleService->sendMessage($fromUser, $toUserId, $message);
+            $chatMessage = $this->manageChatMessagesService->send($fromUser, $toUserId, $message);
         } catch (InvalidArgumentException $exception) {
             return ApiResponse::error($exception->getMessage(), 422);
         }
 
         return ApiResponse::success('Message sent.', [
-            'chat_message' => ChatMessageResource::make([
-                'to_user_id' => $toUserId,
-                'message' => $message,
-            ])->resolve($request),
+            'chat_message' => ChatMessageResource::make($chatMessage)->resolve($request),
         ]);
     }
 }

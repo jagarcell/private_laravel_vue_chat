@@ -25,13 +25,17 @@ class ChatMessageSent implements ShouldBroadcastNow
      * @param  int  $from_user_id
      * @param  string  $from_user_name
      * @param  string  $message
+     * @param  int  $chat_message_id
+     * @param  string|null  $created_at
      * @return void
      */
     public function __construct(
+        public int $chat_message_id,
         public int $to_user_id,
         public int $from_user_id,
         public string $from_user_name,
         public string $message,
+        public ?string $created_at = null,
     ) {}
 
     /**
@@ -51,6 +55,10 @@ class ChatMessageSent implements ShouldBroadcastNow
     /**
      * Define the frontend event alias.
      *
+        * Logic:
+        * 1) Return stable event name consumed by Echo listeners.
+        * 2) Keep payload subscription contract explicit for frontend.
+        *
      * @return string
      */
     public function broadcastAs(): string
@@ -70,10 +78,12 @@ class ChatMessageSent implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
+            'id' => $this->chat_message_id,
             'to_user_id' => $this->to_user_id,
             'from_user_id' => $this->from_user_id,
             'from_user_name' => $this->from_user_name,
             'message' => $this->message,
+            'created_at' => $this->created_at,
         ];
     }
 }
