@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Events\ChatRequestMessage;
 use App\Models\User;
-use App\Support\ActiveChatConnectionsStore;
+use App\Repositories\Chat\ActiveChatConnectionRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -149,9 +149,9 @@ class ProfileTest extends TestCase
         $user = User::factory()->create();
         $peer = User::factory()->create();
 
-        /** @var ActiveChatConnectionsStore $connectionsStore */
-        $connectionsStore = app(ActiveChatConnectionsStore::class);
-        $connectionsStore->connectBidirectional($user->id, $peer->id);
+        /** @var ActiveChatConnectionRepository $connectionRepository */
+        $connectionRepository = app(ActiveChatConnectionRepository::class);
+        $connectionRepository->connectBidirectional($user->id, $peer->id);
 
         $response = $this
             ->actingAs($user)
@@ -169,7 +169,7 @@ class ProfileTest extends TestCase
                 && $event->type === 'closed';
         });
 
-        $this->assertSame([], $connectionsStore->connectedUserIds($user->id)->all());
-        $this->assertSame([], $connectionsStore->connectedUserIds($peer->id)->all());
+        $this->assertSame([], $connectionRepository->connectedUserIds($user->id)->all());
+        $this->assertSame([], $connectionRepository->connectedUserIds($peer->id)->all());
     }
 }
