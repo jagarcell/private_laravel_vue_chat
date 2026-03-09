@@ -29,6 +29,11 @@ class ChatRoom extends Model
     ];
 
     /**
+     * Cast timestamp fields to Carbon instances.
+     *
+     * Logic:
+     * 1) Ensure created/updated timestamps are consistently hydrated as datetimes.
+     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -42,6 +47,9 @@ class ChatRoom extends Model
     /**
      * Resolve the room creator relation.
      *
+     * Logic:
+     * 1) Link each room row to the owning creator user record.
+     *
      * @return BelongsTo<User, ChatRoom>
      */
     public function creator(): BelongsTo
@@ -51,6 +59,10 @@ class ChatRoom extends Model
 
     /**
      * Resolve room participants relation.
+     *
+     * Logic:
+     * 1) Expose many-to-many membership through `chat_room_user` pivot.
+     * 2) Keep pivot timestamps for membership lifecycle tracking.
      *
      * @return BelongsToMany<User, ChatRoom>
      */
@@ -63,11 +75,27 @@ class ChatRoom extends Model
     /**
      * Resolve pending/processed invites for this room.
      *
+     * Logic:
+     * 1) Map one-to-many invite records by room foreign key.
+     *
      * @return HasMany<ChatRoomInvite, ChatRoom>
      */
     public function invites(): HasMany
     {
         return $this->hasMany(ChatRoomInvite::class, 'chat_room_id');
+    }
+
+    /**
+     * Resolve persisted room messages relation.
+     *
+     * Logic:
+     * 1) Map one-to-many room messages by room foreign key.
+     *
+     * @return HasMany<ChatRoomMessage, ChatRoom>
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(ChatRoomMessage::class, 'chat_room_id');
     }
 
 }
