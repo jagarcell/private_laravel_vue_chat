@@ -58,60 +58,146 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
 
-## Local Development
+## Tech Stack
 
-### Local frontend setup
+- Backend framework: Laravel `^12.0`
+- PHP: `^8.2` (CI runs PHP `8.3`)
+- Frontend framework: Vue `^3.4.0`
+- Inertia: `inertiajs/inertia-laravel ^2.0` + `@inertiajs/vue3 ^2.0.0`
+- Realtime broadcasting:
+  - Laravel Reverb `^1.8` (`BROADCAST_CONNECTION=reverb`)
+  - Laravel Echo `^2.3.0`
+  - Pusher JS client `^8.4.0`
+- Database:
+  - Local non-Docker default from `.env.example`: SQLite (`DB_CONNECTION=sqlite`)
+  - Docker/Sail service from `compose.yaml`: MySQL `8.4`
+- Cache / sessions / queues:
+  - Redis service (`redis:alpine`) in Docker mode
+  - Database-backed sessions/cache/queue enabled in `.env.example`
+- Build tooling:
+  - Vite `^7.0.7`
+  - `@vitejs/plugin-vue ^6.0.0`
+  - `laravel-vite-plugin ^2.0.0`
+- Styling:
+  - Tailwind CSS `^3.2.1`
+  - `@tailwindcss/forms ^0.5.3`
+- Frontend testing:
+  - Vitest `^2.1.8`
+  - `@vue/test-utils ^2.4.6`
+  - jsdom `^25.0.1`
+- Auth/API:
+  - Laravel Sanctum `^4.0`
+- Local Node version target:
+  - `.nvmrc`: Node `22.12.0`
+  - CI currently pins Node `20.19.0` in `.github/workflows/ci-cd.yml`
 
-Use the project Node version and start the Vite dev server:
+## Local Setup
+
+### 1) Download the code
 
 ```bash
-nvm use
-npm run dev
+git clone https://github.com/<your-org-or-user>/private_laravel_vue_chat.git
+cd private_laravel_vue_chat
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
 ```
 
-### Full local start (Sail)
+`compose.yaml` defines these local Docker services: `laravel.test`, `mysql`, `redis`, `reverb`, and `scheduler`.
 
-Start:
+### Option A: Run locally with `php artisan serve` (no Docker)
+
+This project's `.env.example` defaults to SQLite, so you can keep that for quick local setup.
+
+1. Confirm `.env` uses local defaults:
+
+```env
+APP_ENV=local
+APP_URL=http://localhost:80
+DB_CONNECTION=sqlite
+SESSION_DRIVER=database
+CACHE_STORE=database
+QUEUE_CONNECTION=database
+BROADCAST_CONNECTION=reverb
+REVERB_HOST=localhost
+REVERB_PORT=8080
+REVERB_SCHEME=http
+VITE_REVERB_HOST=localhost
+VITE_REVERB_PORT=8080
+VITE_REVERB_SCHEME=http
+```
+
+2. Create SQLite DB and run migrations:
+
+```bash
+mkdir -p database
+touch database/database.sqlite
+php artisan migrate
+```
+
+3. Start app services in separate terminals:
+
+```bash
+php artisan serve --host=127.0.0.1 --port=8000
+npm run dev
+php artisan reverb:start --host=0.0.0.0 --port=8080
+```
+
+App URL: `http://127.0.0.1:8000`
+
+### Option B: Run with Laravel Sail + Docker (`compose.yaml`)
+
+For Sail, set `.env` database values to MySQL because `compose.yaml` provides `mysql`.
+
+1. Update `.env`:
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=private_laravel_vue_chat
+DB_USERNAME=sail
+DB_PASSWORD=password
+
+APP_PORT=80
+FORWARD_DB_PORT=3306
+FORWARD_REDIS_PORT=6379
+FORWARD_REVERB_PORT=8080
+REVERB_SERVER_PORT=8080
+```
+
+2. Start containers:
 
 ```bash
 ./vendor/bin/sail up -d
+```
+
+3. Install deps and run migrations in Sail:
+
+```bash
+./vendor/bin/sail composer install
+./vendor/bin/sail npm install
+./vendor/bin/sail artisan key:generate
+./vendor/bin/sail artisan migrate
+```
+
+4. Start Vite in Sail:
+
+```bash
 ./vendor/bin/sail npm run dev
 ```
 
-Reverb is included in Docker Compose and starts with `sail up -d`.
+App URL: `http://localhost`
 
-Stop:
+Stop containers:
 
 ```bash
 ./vendor/bin/sail down
 ```
 
-### Clean rebuild (Sail)
-
-Use this when Docker images/services get out of sync and you need a fresh rebuild:
-
-```bash
-./vendor/bin/sail down --volumes
-./vendor/bin/sail build --no-cache
-./vendor/bin/sail up -d
-```
-
-### Realtime websocket server (Reverb)
-
-Start Reverb in a separate terminal for Echo websocket events (like user status updates on logout):
-
-```bash
-php artisan reverb:start
-```
-
-If you are using Sail, you can also (re)start only the Reverb service:
-
-```bash
-./vendor/bin/sail up -d reverb
-```
-
 For remote clients, do not use `localhost` for `REVERB_HOST` / `VITE_REVERB_HOST`.
-Use your server domain (for example `jagarcell.ddns.net`) and match `REVERB_SCHEME` / `VITE_REVERB_SCHEME` with your site protocol (`http` or `https`).
+Use your server domain and match `REVERB_SCHEME` / `VITE_REVERB_SCHEME` with your site protocol (`http` or `https`).
 
 ## Testing
 
