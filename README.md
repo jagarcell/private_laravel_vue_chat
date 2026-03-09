@@ -58,6 +58,39 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
 
+## Tech Stack
+
+- Backend framework: Laravel `^12.0`
+- PHP: `^8.2` (CI runs PHP `8.3`)
+- Frontend framework: Vue `^3.4.0`
+- Inertia: `inertiajs/inertia-laravel ^2.0` + `@inertiajs/vue3 ^2.0.0`
+- Realtime broadcasting:
+  - Laravel Reverb `^1.8` (`BROADCAST_CONNECTION=reverb`)
+  - Laravel Echo `^2.3.0`
+  - Pusher JS client `^8.4.0`
+- Database:
+  - Local non-Docker default from `.env.example`: SQLite (`DB_CONNECTION=sqlite`)
+  - Docker/Sail service from `compose.yaml`: MySQL `8.4`
+- Cache / sessions / queues:
+  - Redis service (`redis:alpine`) in Docker mode
+  - Database-backed sessions/cache/queue enabled in `.env.example`
+- Build tooling:
+  - Vite `^7.0.7`
+  - `@vitejs/plugin-vue ^6.0.0`
+  - `laravel-vite-plugin ^2.0.0`
+- Styling:
+  - Tailwind CSS `^3.2.1`
+  - `@tailwindcss/forms ^0.5.3`
+- Frontend testing:
+  - Vitest `^2.1.8`
+  - `@vue/test-utils ^2.4.6`
+  - jsdom `^25.0.1`
+- Auth/API:
+  - Laravel Sanctum `^4.0`
+- Local Node version target:
+  - `.nvmrc`: Node `22.12.0`
+  - CI currently pins Node `20.19.0` in `.github/workflows/ci-cd.yml`
+
 ## Local Setup
 
 ### 1) Download the code
