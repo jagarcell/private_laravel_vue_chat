@@ -13,8 +13,10 @@ const requestStates = ref({});
 const incomingRequest = ref(null);
 const selectedUserId = ref(null);
 const messageHistories = ref({});
+const chatRoomMessageHistories = ref({});
 const unreadIncomingCounts = ref({});
 const chatRooms = ref([]);
+const selectedChatRoomId = ref(null);
 const roomInvites = ref([]);
 const roomNotices = ref([]);
 
@@ -42,6 +44,12 @@ const selectedUser = computed(() => {
 });
 
 const selectedUserMessages = computed(() => {
+    const selectedRoomId = Number(selectedChatRoomId.value ?? 0);
+
+    if (selectedRoomId) {
+        return chatRoomMessageHistories.value[selectedRoomId] ?? [];
+    }
+
     if (!selectedUser.value) {
         return [];
     }
@@ -55,6 +63,22 @@ const selectedUserRequestState = computed(() => {
     }
 
     return requestStates.value[selectedUser.value.id] ?? 'none';
+});
+
+const hasValidSelectedChatRoom = computed(() => {
+    const selectedRoomId = Number(selectedChatRoomId.value ?? 0);
+
+    if (!selectedRoomId) {
+        return false;
+    }
+
+    const selectedRoom = chatRooms.value.find((chatRoom) => Number(chatRoom.id) === selectedRoomId);
+    const participants = Array.isArray(selectedRoom?.users) ? selectedRoom.users : [];
+    const nonAuthenticatedParticipants = participants.filter((participant) => {
+        return Number(participant?.id ?? 0) !== Number(requesterId.value);
+    });
+
+    return nonAuthenticatedParticipants.length > 0;
 });
 
 const readPersistedState = () => {
@@ -169,6 +193,13 @@ const setConversationHistory = (userId, messages) => {
     };
 };
 
+const setChatRoomConversationHistory = (chatRoomId, messages) => {
+    chatRoomMessageHistories.value = {
+        ...chatRoomMessageHistories.value,
+        [chatRoomId]: messages.map(normalizeMessage),
+    };
+};
+
 const loadUnreadIncomingCounts = async () => {
     const response = await axios.get('/api/chat-messages/unread-counts');
     const counts = response.data?.data?.counts ?? [];
@@ -199,6 +230,17 @@ const loadConversationForUser = async (userId) => {
     setConversationHistory(userId, messages);
 };
 
+const loadConversationForChatRoom = async (chatRoomId) => {
+    if (!chatRoomId) {
+        return;
+    }
+
+    const response = await axios.get(`/api/chat-rooms/${chatRoomId}/messages`);
+    const messages = response.data?.data?.messages ?? [];
+
+    setChatRoomConversationHistory(chatRoomId, messages);
+};
+
 const markConversationAsRead = async (userId) => {
     if (!userId) {
         return;
@@ -227,6 +269,13 @@ const loadChatRooms = async () => {
     const response = await axios.get('/api/chat-rooms');
 
     chatRooms.value = response.data?.data?.rooms ?? [];
+
+    if (
+        selectedChatRoomId.value &&
+        !chatRooms.value.some((chatRoom) => Number(chatRoom.id) === Number(selectedChatRoomId.value))
+    ) {
+        selectedChatRoomId.value = null;
+    }
 };
 
 const loadRoomInvites = async () => {
@@ -245,6 +294,8 @@ const createChatRoom = async (payload) => {
 
     if (chatRoom) {
         chatRooms.value = [chatRoom, ...chatRooms.value];
+        selectedChatRoomId.value = Number(chatRoom.id);
+        selectedUserId.value = null;
     }
 };
 
@@ -253,7 +304,12 @@ const removeRoomInviteFromState = (inviteId) => {
 };
 
 const removeChatRoomFromState = (chatRoomId) => {
+    const normalizedRoomId = Number(chatRoomId ?? 0);
     chatRooms.value = chatRooms.value.filter((chatRoom) => Number(chatRoom.id) !== Number(chatRoomId));
+
+    if (normalizedRoomId && Number(selectedChatRoomId.value) === normalizedRoomId) {
+        selectedChatRoomId.value = null;
+    }
 };
 
 const addRoomNotice = (message, roomId = null) => {
@@ -297,6 +353,8 @@ const respondRoomInvite = async (invite, action) => {
             chatRoom,
             ...chatRooms.value.filter((existingRoom) => Number(existingRoom.id) !== Number(chatRoom.id)),
         ];
+        selectedChatRoomId.value = Number(chatRoom.id);
+        selectedUserId.value = null;
     }
 
     removeRoomInviteFromState(inviteId);
@@ -308,6 +366,16 @@ const acceptRoomInvite = async (invite) => {
 
 const declineRoomInvite = async (invite) => {
     await respondRoomInvite(invite, 'decline');
+};
+
+const selectChatRoom = (chatRoom) => {
+    const chatRoomId = Number(chatRoom?.id ?? 0);
+    selectedChatRoomId.value = chatRoomId > 0 ? chatRoomId : null;
+    selectedUserId.value = null;
+
+    if (selectedChatRoomId.value) {
+        loadConversationForChatRoom(selectedChatRoomId.value);
+    }
 };
 
 const closeChatRoom = async (chatRoom) => {
@@ -377,6 +445,7 @@ const selectUser = async (user) => {
     const userId = normalizeUserId(user?.id);
 
     selectedUserId.value = userId;
+    selectedChatRoomId.value = null;
 
     if (!userId) {
         return;
@@ -492,8 +561,32 @@ const sendMessage = async (content) => {
     const targetUser = selectedUser.value;
     const trimmedContent = String(content ?? '').trim();
     const isConnected = selectedUserRequestState.value === 'connected';
+    const canSendInSelectedChatRoom = hasValidSelectedChatRoom.value;
+    const roomId = Number(selectedChatRoomId.value ?? 0);
 
-    if (!targetUser || !targetUser.is_online || !isConnected || trimmedContent.length === 0) {
+    if (trimmedContent.length === 0) {
+        return;
+    }
+
+    if (roomId && canSendInSelectedChatRoom) {
+        const response = await axios.post(`/api/chat-rooms/${roomId}/messages`, {
+            message: trimmedContent,
+        });
+
+        const chatMessage = response.data?.data?.chat_message;
+
+        if (chatMessage) {
+            const existing = chatRoomMessageHistories.value[roomId] ?? [];
+            chatRoomMessageHistories.value = {
+                ...chatRoomMessageHistories.value,
+                [roomId]: [...existing, normalizeMessage(chatMessage)],
+            };
+        }
+
+        return;
+    }
+
+    if (!targetUser || !targetUser.is_online || !isConnected) {
         return;
     }
 
@@ -628,6 +721,37 @@ const handleChatMessageSent = (event) => {
     }
 };
 
+const handleChatRoomMessageSent = (event) => {
+    const roomId = Number(event?.chat_room_id ?? 0);
+    const fromUserId = Number(event?.from_user_id ?? 0);
+    const message = String(event?.message ?? '').trim();
+
+    if (!roomId || !fromUserId || message.length === 0) {
+        return;
+    }
+
+    const existing = chatRoomMessageHistories.value[roomId] ?? [];
+    const normalizedMessage = normalizeMessage({
+        id: Number(event?.id ?? 0),
+        from_user_id: fromUserId,
+        from_user_name: String(event?.from_user_name ?? 'User'),
+        to_user_id: null,
+        message,
+        is_mine: false,
+        read_at: null,
+        created_at: event?.created_at ?? null,
+    });
+
+    if (normalizedMessage.id && existing.some((chatMessage) => chatMessage.id === normalizedMessage.id)) {
+        return;
+    }
+
+    chatRoomMessageHistories.value = {
+        ...chatRoomMessageHistories.value,
+        [roomId]: [...existing, normalizedMessage],
+    };
+};
+
 /**
  * Handle realtime read-receipt events and apply them to local history.
  *
@@ -683,6 +807,7 @@ onMounted(() => {
 
             window.Echo.private(`users.chat-message.${requesterId.value}`)
                 .listen('.chat.message.sent', handleChatMessageSent)
+                .listen('.chat.room.message.sent', handleChatRoomMessageSent)
                 .listen('.chat.messages.read', handleChatMessagesRead);
         }
     }
@@ -706,6 +831,7 @@ onUnmounted(() => {
 
             window.Echo.private(`users.chat-message.${requesterId.value}`)
                 .stopListening('.chat.message.sent', handleChatMessageSent)
+                .stopListening('.chat.room.message.sent', handleChatRoomMessageSent)
                 .stopListening('.chat.messages.read', handleChatMessagesRead);
         }
     }
@@ -739,6 +865,7 @@ onUnmounted(() => {
                             />
                             <ChatRooms
                                 :chat-rooms="chatRooms"
+                                :selected-chat-room-id="selectedChatRoomId"
                                 :room-invites="roomInvites"
                                 :room-notices="roomNotices"
                                 :users="users"
@@ -748,6 +875,7 @@ onUnmounted(() => {
                                 @decline-room-invite="declineRoomInvite"
                                 @close-chat-room="closeChatRoom"
                                 @confirm-leave-chat-room="leaveChatRoom"
+                                @select-chat-room="selectChatRoom"
                                 @dismiss-room-notice="dismissRoomNotice"
                             />
                         </div>
@@ -758,6 +886,7 @@ onUnmounted(() => {
                             :incoming-request="incomingRequest"
                             :selected-user="selectedUser"
                             :selected-user-request-state="selectedUserRequestState"
+                            :has-valid-selected-chat-room="hasValidSelectedChatRoom"
                             :message-history="selectedUserMessages"
                             @accept-request="acceptChatRequest"
                             @decline-request="declineChatRequest"
