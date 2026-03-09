@@ -14,6 +14,10 @@ const props = defineProps({
         type: String,
         default: 'none',
     },
+    hasValidSelectedChatRoom: {
+        type: Boolean,
+        default: false,
+    },
     messageHistory: {
         type: Array,
         default: () => [],
@@ -28,8 +32,9 @@ const canSendMessage = computed(() => {
     const hasMessage = messageInput.value.trim().length > 0;
     const hasOnlineSelectedUser = Boolean(props.selectedUser?.is_online);
     const hasConnectedSelectedUser = props.selectedUserRequestState === 'connected';
+    const hasValidSelectedChatRoom = props.hasValidSelectedChatRoom;
 
-    return hasMessage && hasOnlineSelectedUser && hasConnectedSelectedUser;
+    return hasMessage && (hasValidSelectedChatRoom || (hasOnlineSelectedUser && hasConnectedSelectedUser));
 });
 
 const sendMessage = () => {

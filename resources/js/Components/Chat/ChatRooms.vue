@@ -6,6 +6,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    selectedChatRoomId: {
+        type: Number,
+        default: null,
+    },
     users: {
         type: Array,
         default: () => [],
@@ -30,6 +34,7 @@ const emit = defineEmits([
     'decline-room-invite',
     'close-chat-room',
     'confirm-leave-chat-room',
+    'select-chat-room',
     'dismiss-room-notice',
 ]);
 
@@ -134,6 +139,10 @@ const confirmLeaveRoom = (chatRoom) => {
     clearLeavePrompt();
 };
 
+const isSelectedRoom = (chatRoom) => {
+    return Number(chatRoom?.id) === Number(props.selectedChatRoomId);
+};
+
 const noticesForRoom = (chatRoomId) => {
     const normalizedRoomId = Number(chatRoomId ?? 0);
 
@@ -172,7 +181,9 @@ const noticesForRoom = (chatRoomId) => {
             <li
                 v-for="chatRoom in chatRooms"
                 :key="chatRoom.id"
-                class="rounded-md border border-gray-200 p-3"
+                class="cursor-pointer rounded-md border p-3"
+                :class="isSelectedRoom(chatRoom) ? 'border-blue-500 bg-blue-50' : 'border-gray-200'"
+                @click="emit('select-chat-room', chatRoom)"
             >
                 <p class="text-sm font-medium text-gray-900">{{ chatRoom.name }}</p>
                 <p class="mt-1 text-xs text-gray-500">{{ roomParticipantsLabel(chatRoom) }}</p>

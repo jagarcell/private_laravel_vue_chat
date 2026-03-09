@@ -5,11 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ChatConversationIndexRequest;
 use App\Http\Requests\Api\ChatConversationMarkReadRequest;
+use App\Http\Requests\Api\ChatRoomConversationIndexRequest;
+use App\Http\Requests\Api\ChatRoomMessageSendRequest;
 use App\Http\Resources\ChatMessageResource;
+use App\Http\Resources\ChatRoomMessageResource;
 use App\Http\Resources\ChatUnreadCountResource;
 use App\Models\User;
 use App\Services\Auth\ResolveAuthenticatedUserService;
 use App\Services\Chat\ManageChatMessagesService;
+use App\Services\Chat\ManageChatRoomMessagesService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,28 +26,30 @@ class ChatMessageController extends Controller
     /**
      * Create a new controller instance.
      *
-        * Logic:
-        * 1) Inject message management service for persistence and query operations.
-        * 2) Inject authenticated-user resolver for API request user context.
-        *
+     * Logic:
+     * 1) Inject direct-message service for existing one-to-one chat endpoints.
+     * 2) Inject room-message service for chat-room message endpoints.
+     * 3) Inject authenticated-user resolver for request user context.
+     *
      * @param  ManageChatMessagesService  $manageChatMessagesService
      * @param  ResolveAuthenticatedUserService  $resolveAuthenticatedUserService
      * @return void
      */
     public function __construct(
         private readonly ManageChatMessagesService $manageChatMessagesService,
+        private readonly ManageChatRoomMessagesService $manageChatRoomMessagesService,
         private readonly ResolveAuthenticatedUserService $resolveAuthenticatedUserService,
     ) {}
 
     /**
      * Return persisted conversation history for authenticated user and target user.
      *
-        * Logic:
-        * 1) Resolve authenticated user from the request context.
-        * 2) Read validated query constraints such as `limit`.
-        * 3) Delegate conversation retrieval to the service layer.
-        * 4) Transform results using API resource collection.
-        *
+     * Logic:
+     * 1) Resolve authenticated user from the request context.
+     * 2) Read validated query constraints such as `limit`.
+     * 3) Delegate conversation retrieval to the service layer.
+     * 4) Transform results using API resource collection.
+     *
      * @param  ChatConversationIndexRequest  $request
      * @param  User  $user
      * @return JsonResponse
@@ -63,11 +69,11 @@ class ChatMessageController extends Controller
     /**
      * Return unread incoming message counts grouped by sender user.
      *
-        * Logic:
-        * 1) Resolve authenticated user from request context.
-        * 2) Query grouped unread counters via service layer.
-        * 3) Transform and return standardized API success envelope.
-        *
+     * Logic:
+     * 1) Resolve authenticated user from request context.
+     * 2) Query grouped unread counters via service layer.
+     * 3) Transform and return standardized API success envelope.
+     *
      * @param  Request  $request
      * @return JsonResponse
      */
@@ -102,6 +108,54 @@ class ChatMessageController extends Controller
 
         return ApiResponse::success('Conversation marked as read.', [
             'updated_count' => $result['updated_count'],
+        ]);
+    }
+
+    /**
+     * Return persisted room message history for authenticated room participant.
+     *
+     * Logic:
+     * 1) Resolve authenticated user and validate query payload.
+     * 2) Fetch room-scoped conversation limited by validated `limit`.
+     * 3) Transform room messages into shared chat-message response shape.
+     *
+     * @param  ChatRoomConversationIndexRequest  $request
+     * @param  int  $chatRoomId
+     * @return JsonResponse
+     */
+    public function roomConversation(ChatRoomConversationIndexRequest $request, int $chatRoomId): JsonResponse
+    {
+        $authenticatedUser = $this->resolveAuthenticatedUserService->handle($request);
+        $limit = (int) ($request->validated()['limit'] ?? 200);
+
+        $messages = $this->manageChatRoomMessagesService->conversation($authenticatedUser, $chatRoomId, $limit);
+
+        return ApiResponse::success('Room conversation retrieved successfully.', [
+            'messages' => ChatRoomMessageResource::collection($messages)->resolve($request),
+        ]);
+    }
+
+    /**
+     * Send one room-scoped message as authenticated room participant.
+     *
+     * Logic:
+     * 1) Resolve authenticated user and normalize validated message text.
+     * 2) Delegate persistence and broadcast side effects to service layer.
+     * 3) Return created room message in standardized API envelope.
+     *
+     * @param  ChatRoomMessageSendRequest  $request
+     * @param  int  $chatRoomId
+     * @return JsonResponse
+     */
+    public function sendRoomMessage(ChatRoomMessageSendRequest $request, int $chatRoomId): JsonResponse
+    {
+        $authenticatedUser = $this->resolveAuthenticatedUserService->handle($request);
+        $message = trim((string) $request->validated()['message']);
+
+        $chatRoomMessage = $this->manageChatRoomMessagesService->send($authenticatedUser, $chatRoomId, $message);
+
+        return ApiResponse::success('Room message sent.', [
+            'chat_message' => ChatRoomMessageResource::make($chatRoomMessage)->resolve($request),
         ]);
     }
 }
