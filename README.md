@@ -1,4 +1,4 @@
-# Private Laravel Vue Chat
+# Private Channel Chat
 ## Tech Stack
 
 - Backend framework: Laravel `^12.0`
